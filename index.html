@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TerraRun 코스 도구</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{--bg:#fbfaf7;--ink:#1f1d1a;--mute:#6f6a62;--line:#e4e0d8;--accent:#d9480f;--accent2:#2b8a3e;--card:#ffffff;--warn:#c92a2a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+#map{position:fixed;inset:0 0 auto 0;height:58vh}
+header{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;gap:6px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));pointer-events:none}
+header .tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;pointer-events:auto;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+header button{border:0;background:transparent;padding:7px 13px;border-radius:999px;font:inherit;font-weight:600;color:var(--mute)}
+header button.on{background:var(--accent);color:#fff}
+#locate{margin-left:auto;pointer-events:auto;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 12px;font:inherit;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+#panel{position:fixed;left:0;right:0;bottom:0;top:56vh;background:var(--bg);border-top:1px solid var(--line);border-radius:16px 16px 0 0;overflow:auto;padding:14px 16px calc(24px + env(safe-area-inset-bottom));box-shadow:0 -2px 10px rgba(0,0,0,.06)}
+h2{font-size:17px;margin:2px 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 12px;font:inherit}
+.chip.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+.btn{border:0;background:var(--accent);color:#fff;border-radius:10px;padding:11px 14px;font:inherit;font-weight:700}
+.btn.sec{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.green{background:var(--accent2)}
+.btn:disabled{opacity:.45}
+input[type=text]{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;width:84px;background:var(--card)}
+.muted{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.kv{display:flex;gap:14px;flex-wrap:wrap;font-size:14px}
+.kv b{font-size:18px}
+canvas{width:100%;height:120px;display:block}
+.cue{display:flex;justify-content:space-between;font-size:13px;border-bottom:1px dashed var(--line);padding:4px 0}
+.cue.done{color:var(--mute);text-decoration:line-through}
+#runbig{font-size:26px;font-weight:800;margin:4px 0}
+.warn{color:var(--warn);font-weight:700}
+.hide{display:none!important}
+.maplibregl-ctrl-attrib{font-size:10px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<header>
+  <div class="tabs">
+    <button data-mode="recommend" class="on">추천</button>
+    <button data-mode="draw">그리기</button>
+    <button data-mode="mine">내 코스</button>
+  </div>
+  <button id="locate">◎ 내 위치</button>
+</header>
+
+<section id="panel">
+  <!-- 추천 -->
+  <div id="p-recommend">
+    <h2>내 위치에서 순환 코스 추천</h2>
+    <div class="row" id="minutes"></div>
+    <div class="row">평지 페이스 <input type="text" id="pace" value="6:30"> /km
+      <span class="muted" id="target"></span></div>
+    <div class="row">
+      <button class="btn" id="go-rec">추천 3개 만들기</button>
+      <button class="btn sec" id="center-start">지도 가운데에서</button>
+    </div>
+    <div class="muted" id="rec-status"></div>
+    <div id="rec-list"></div>
+  </div>
+
+  <!-- 그리기 -->
+  <div id="p-draw" class="hide">
+    <h2>지도에 동선 그리기</h2>
+    <div class="muted">지도를 눌러 지나갈 곳을 차례로 찍으면 걷고 뛸 수 있는 길로 이어 줍니다(최대 25점).</div>
+    <div class="row">
+      <button class="btn sec" id="d-undo">되돌리기</button>
+      <button class="btn sec" id="d-close">출발점으로 닫기</button>
+      <button class="btn sec" id="d-clear">지우기</button>
+    </div>
+    <div class="kv" id="d-info"></div>
+    <div class="row"><button class="btn" id="d-use" disabled>이 동선으로 코스 만들기</button></div>
+    <div class="row"><label class="btn sec">내 기록(GPX) 불러오기<input type="file" id="gpx" accept=".gpx,application/gpx+xml" class="hide"></label></div>
+  </div>
+
+  <!-- 내 코스 -->
+  <div id="p-mine" class="hide">
+    <h2>저장한 코스</h2>
+    <div id="mine-list" class="muted">아직 없습니다.</div>
+    <h2 style="margin-top:16px">지난 런 기록</h2>
+    <div id="lastrun" class="muted">없습니다.</div>
+  </div>
+
+  <!-- 코스 상세 -->
+  <div id="p-course" class="hide">
+    <div class="row" style="justify-content:space-between"><h2 id="c-title">코스</h2><button class="chip" id="c-back">← 목록</button></div>
+    <div class="kv" id="c-kv"></div>
+    <canvas id="prof"></canvas>
+    <div class="row">말 양
+      <button class="chip" data-talk="low">적게(언덕당 2)</button>
+      <button class="chip on" data-talk="mid">보통(언덕당 3)</button>
+    </div>
+    <div id="c-cues"></div>
+    <div class="row">
+      <button class="btn green" id="c-run">달리기 시작</button>
+      <button class="btn sec" id="c-sim">시뮬레이션(5배속)</button>
+    </div>
+    <div class="row">
+      <button class="btn sec" id="c-save">코스 저장</button>
+      <button class="btn sec" id="c-gpx">GPX 내보내기</button>
+      <button class="btn sec" id="c-test">소리 확인</button>
+    </div>
+    <div class="muted">고도는 위성 자료(SRTM 30 m)라 오르막 시작·정상이 실제와 수십 m 어긋날 수 있습니다. 그 차이를 재는 게 이번 시험입니다.</div>
+  </div>
+
+  <!-- 달리기 -->
+  <div id="p-run" class="hide">
+    <div class="row" style="justify-content:space-between"><h2 id="r-title">달리는 중</h2><span class="muted" id="r-mode"></span></div>
+    <div id="runbig">—</div>
+    <div class="kv" id="r-kv"></div>
+    <canvas id="rprof"></canvas>
+    <div class="muted" id="r-hint">화면을 켠 채로 두세요(화면이 꺼지면 브라우저가 위치를 멈춥니다). 음악 앱은 먼저 틀어 두면 됩니다.</div>
+    <div class="row"><button class="btn" id="r-stop">끝내기</button></div>
+  </div>
+
+  <p class="muted" style="margin-top:18px">위치는 이 폰 안에서만 계산합니다. 길 이어 주기에 찍은 지점이 공개 경로 서버(routing.openstreetmap.de)로, 지도·고도 타일 요청이 OpenFreeMap·AWS로 갑니다. 코스·기록은 이 폰 브라우저에만 저장됩니다. · © OpenMapTiles © OpenStreetMap contributors · 고도 Mapzen Terrain Tiles(SRTM)</p>
+</section>
+
+<script>
+"use strict";
+// ---------- 상태 ----------
+const S={mode:'recommend',minutes:30,paceSec:390,talk:'mid',here:null,course:null,draw:[],drawRoute:null,recs:[],prevMode:'recommend'};
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const $=id=>document.getElementById(id);
+const fmtMin=s=>{s=Math.round(s);return `${Math.floor(s/60)}분 ${String(s%60).padStart(2,'0')}초`};
+const fmtKm=m=>m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m';
+function parsePace(t){const m=/^(\d+):(\d{1,2})$/.exec(t.trim());return m?(+m[1])*60+(+m[2]):null}
+
+// ---------- 지리 ----------
+const R_E=6371000,rad=d=>d*Math.PI/180,deg=r=>r*180/Math.PI;
+function hav(a,b){const dLa=rad(b[1]-a[1]),dLo=rad(b[0]-a[0]);const h=Math.sin(dLa/2)**2+Math.cos(rad(a[1]))*Math.cos(rad(b[1]))*Math.sin(dLo/2)**2;return 2*R_E*Math.asin(Math.sqrt(h))}
+function dest(p,brg,d){const la=rad(p[1]),lo=rad(p[0]),b=rad(brg),dr=d/R_E;const la2=Math.asin(Math.sin(la)*Math.cos(dr)+Math.cos(la)*Math.sin(dr)*Math.cos(b));const lo2=lo+Math.atan2(Math.sin(b)*Math.sin(dr)*Math.cos(la),Math.cos(dr)-Math.sin(la)*Math.sin(la2));return [deg(lo2),deg(la2)]}
+// 단순·안전한 등간격 재표집
+function resampleSimple(coords,step){const cum=[0];for(let i=1;i<coords.length;i++)cum.push(cum[i-1]+hav(coords[i-1],coords[i]));const L=cum[cum.length-1];const out=[];let j=1;for(let s=0;s<=L+1e-6;s+=step){while(j<cum.length-1&&cum[j]<s)j++;const s0=cum[j-1],s1=cum[j],t=s1>s0?(s-s0)/(s1-s0):0,a=coords[j-1],b=coords[j];out.push({p:[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],s})}
+  if(out.length&&L-out[out.length-1].s>step*0.3)out.push({p:coords[coords.length-1],s:L});return out}
+function lengthOf(coords){let L=0;for(let i=1;i<coords.length;i++)L+=hav(coords[i-1],coords[i]);return L}
+
+// ---------- 경로(OSRM 보행) ----------
+let lastCall=0;
+async function osrm(pts){const wait=Math.max(0,450-(Date.now()-lastCall));if(wait)await new Promise(r=>setTimeout(r,wait));lastCall=Date.now();
+  const q=pts.map(p=>p[0].toFixed(6)+','+p[1].toFixed(6)).join(';');
+  const r=await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${q}?overview=full&geometries=geojson&continue_straight=false`);
+  const j=await r.json();if(j.code!=='Ok')throw new Error(j.message||j.code);return {coords:j.routes[0].geometry.coordinates,dist:j.routes[0].distance}}
+
+// ---------- 고도(Terrarium 타일, z14) ----------
+const Z=14,tiles=new Map();
+function tileXY(lon,lat){const n=2**Z,x=(lon+180)/360*n,r=rad(lat),y=(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n;return [x*256,y*256]}
+function loadTile(tx,ty){const k=tx+'/'+ty;if(tiles.has(k))return tiles.get(k);
+  const pr=new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);const d=g.getImageData(0,0,256,256).data;const e=new Float32Array(65536);for(let i=0;i<65536;i++)e[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;res(e)};im.onerror=()=>rej(new Error('고도 타일 실패'));im.src=`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${tx}/${ty}.png`});
+  tiles.set(k,pr);return pr}
+async function elevations(pts){const need=new Set();for(const p of pts){const [x,y]=tileXY(p[0],p[1]);for(const dx of[-1,1])for(const dy of[-1,1])need.add(Math.floor((x+dx)/256)+'/'+Math.floor((y+dy)/256))}
+  const got=new Map();await Promise.all([...need].map(async k=>{const[a,b]=k.split('/').map(Number);got.set(k,await loadTile(a,b))}));
+  const px=(ix,iy)=>got.get((ix>>8)+'/'+(iy>>8))[(iy&255)*256+(ix&255)];
+  return pts.map(p=>{const [x,y]=tileXY(p[0],p[1]);const gx=x-0.5,gy=y-0.5,x0=Math.floor(gx),y0=Math.floor(gy),fx=gx-x0,fy=gy-y0;
+    return px(x0,y0)*(1-fx)*(1-fy)+px(x0+1,y0)*fx*(1-fy)+px(x0,y0+1)*(1-fx)*fy+px(x0+1,y0+1)*fx*fy})}
+
+// ---------- 프로파일·오르막 ----------
+const STEP=20;
+function smooth(a,h){const o=a.map((_,i)=>{let s=0,n=0;for(let k=-h;k<=h;k++){const j=i+k;if(j>=0&&j<a.length){s+=a[j];n++}}return s/n});return o}
+async function buildCourse(coords,name,source){
+  const rs=resampleSimple(coords,STEP);const raw=await elevations(rs.map(r=>r.p));
+  const e=smooth(smooth(raw,2),2); // ≈100 m 창
+  const L=rs[rs.length-1].s,n=e.length;
+  const g=e.map((_,i)=>{const a=Math.max(0,i-2),b=Math.min(n-1,i+2);return b>a?(e[b]-e[a])/((b-a)*STEP):0});
+  let up=g.map(x=>x>=0.025);
+  // 40 m 이하 틈 메우기
+  for(let i=1;i<n-2;i++)if(!up[i]&&up[i-1]&&(up[i+1]||up[i+2]))up[i]=true;
+  const climbs=[];let i=0;while(i<n){if(!up[i]){i++;continue}let j=i;while(j+1<n&&up[j+1])j++;
+    // 경계를 실제 고도 최저·최고로 다듬기
+    let a=Math.max(0,i-1),b=Math.min(n-1,j+1);let lo=a;for(let k=a;k<=i+1&&k<n;k++)if(e[k]<e[lo])lo=k;let hi=b;for(let k=Math.max(j-1,0);k<=Math.min(n-1,j+2);k++)if(e[k]>e[hi])hi=k;
+    const gain=e[hi]-e[lo],len=(hi-lo)*STEP;let mg=0;for(let k=lo;k<=hi;k++)mg=Math.max(mg,g[k]);
+    if(gain>=4&&len>=60)climbs.push({s0:lo*STEP,s1:hi*STEP,gain,len,avg:gain/len,max:mg});i=j+1}
+  // 서로 60 m 안이면 합치기
+  const merged=[];for(const c of climbs){const p=merged[merged.length-1];if(p&&c.s0-p.s1<60){p.s1=c.s1;p.gain+=c.gain;p.len=p.s1-p.s0;p.avg=p.gain/p.len;p.max=Math.max(p.max,c.max)}else merged.push({...c})}
+  let gainT=0;for(let k=1;k<n;k++)if(e[k]>e[k-1])gainT+=e[k]-e[k-1];
+  return {name,source,coords,rs,e,g,L,climbs:merged,gain:gainT,created:Date.now()}}
+function minetti(i){i=Math.max(-0.10,Math.min(0.30,i));return 155.4*i**5-30.4*i**4-43.3*i**3+46.3*i**2+19.5*i+3.6}
+function estTime(c){let t=0;for(let k=1;k<c.e.length;k++)t+=STEP*S.paceSec/1000*minetti(c.g[k])/3.6;return t}
+function planCues(c){const v=1000/S.paceSec,lead=v*10,cues=[];const n=c.climbs.length;
+  cues.push({id:'intro',at:0,clip:'intro'+Math.min(n,5),label:n?`시작 안내 · 오르막 ${n}개`:'시작 안내 · 평지'});
+  c.climbs.forEach((h,k)=>{cues.push({id:`h${k}s`,at:Math.max(5,h.s0-lead),clip:'climb_start',label:`오르막 ${k+1} 시작 예고 (${Math.round(h.len)} m, +${h.gain.toFixed(0)} m, 평균 ${(h.avg*100).toFixed(1)}%)`});
+    cues.push({id:`h${k}t`,at:h.s1,clip:'summit',label:`오르막 ${k+1} 정상`});
+    const f=h.s1+40,nx=c.climbs[k+1];if(f<c.L-40&&(!nx||f<nx.s0-lead-30))cues.push({id:`h${k}f`,at:f,clip:S.talk==='low'?'false_summit_bell':'flat_resume',label:S.talk==='low'?'평지 복귀(종)':'평지 복귀'})});
+  cues.push({id:'done',at:Math.max(0,c.L-20),clip:'done',label:'끝'});
+  return cues.sort((a,b)=>a.at-b.at)}
+
+// ---------- 소리 ----------
+const CLIPS=['intro0','intro1','intro2','intro3','intro4','intro5','climb_start','summit','flat_resume','false_summit_bell','done','off_route','back_on'];
+const audio={};CLIPS.forEach(k=>{const a=new Audio(`clips/${k}.mp3`);a.preload='auto';audio[k]=a});
+const aq=[];let playing=false;
+function play(k){aq.push(k);pump()}
+function pump(){if(playing||!aq.length)return;const a=audio[aq.shift()];if(!a)return pump();playing=true;a.currentTime=0;a.onended=()=>{playing=false;setTimeout(pump,300)};a.play().catch(()=>{playing=false;pump()})}
+function unlockAudio(){Object.values(audio).forEach(a=>{const v=a.volume;a.volume=0;a.play().then(()=>{a.pause();a.currentTime=0;a.volume=v}).catch(()=>{a.volume=v})})}
+
+// ---------- 지도 ----------
+const map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/bright',center:[126.978,37.5665],zoom:12,attributionControl:{compact:true}});
+const emptyFC={type:'FeatureCollection',features:[]};
+map.on('load',()=>{
+  map.addSource('cands',{type:'geojson',data:emptyFC});map.addLayer({id:'cands',type:'line',source:'cands',paint:{'line-color':['get','color'],'line-width':['case',['get','sel'],6,3],'line-opacity':['case',['get','sel'],0.95,0.55]},layout:{'line-cap':'round','line-join':'round'}});
+  map.addSource('route',{type:'geojson',data:emptyFC});map.addLayer({id:'route',type:'line',source:'route',paint:{'line-color':'#d9480f','line-width':5},layout:{'line-cap':'round','line-join':'round'}});
+  map.addSource('climbs',{type:'geojson',data:emptyFC});map.addLayer({id:'climbs',type:'line',source:'climbs',paint:{'line-color':'#862e9c','line-width':8,'line-opacity':0.85},layout:{'line-cap':'round'}});
+  map.addSource('cues',{type:'geojson',data:emptyFC});map.addLayer({id:'cues',type:'circle',source:'cues',paint:{'circle-radius':5,'circle-color':'#fff','circle-stroke-color':'#1f1d1a','circle-stroke-width':2}});
+  map.addSource('draw',{type:'geojson',data:emptyFC});map.addLayer({id:'draw',type:'circle',source:'draw',paint:{'circle-radius':6,'circle-color':'#2b8a3e','circle-stroke-color':'#fff','circle-stroke-width':2}});
+  map.addSource('me',{type:'geojson',data:emptyFC});map.addLayer({id:'me-acc',type:'circle',source:'me',paint:{'circle-radius':['get','r'],'circle-color':'#d9480f','circle-opacity':0.12}});map.addLayer({id:'me',type:'circle',source:'me',paint:{'circle-radius':7,'circle-color':'#d9480f','circle-stroke-color':'#fff','circle-stroke-width':3}});
+  locate(false);
+});
+const setData=(id,d)=>{const s=map.getSource(id);if(s)s.setData(d)};
+const line=(coords,props={})=>({type:'Feature',properties:props,geometry:{type:'LineString',coordinates:coords}});
+const pt=(p,props={})=>({type:'Feature',properties:props,geometry:{type:'Point',coordinates:p}});
+function showMe(p,acc){const mpp=156543.03*Math.cos(rad(p[1]))/2**map.getZoom();setData('me',{type:'FeatureCollection',features:[pt(p,{r:Math.max(7,(acc||10)/mpp)})]})}
+function fit(coords){const b=new maplibregl.LngLatBounds(coords[0],coords[0]);coords.forEach(c=>b.extend(c));map.fitBounds(b,{padding:{top:70,bottom:30,left:30,right:30},duration:600})}
+function locate(fly=true){if(!navigator.geolocation){$('rec-status').textContent='이 브라우저는 위치를 지원하지 않습니다. "지도 가운데에서"를 쓰세요.';return}
+  navigator.geolocation.getCurrentPosition(p=>{S.here=[p.coords.longitude,p.coords.latitude];showMe(S.here,p.coords.accuracy);map.flyTo({center:S.here,zoom:15});$('rec-status').textContent=`내 위치 확인(정확도 ±${Math.round(p.coords.accuracy)} m)`},
+    e=>{$('rec-status').textContent='위치를 못 받았습니다('+e.message+'). 지도를 원하는 곳으로 옮긴 뒤 "지도 가운데에서"를 누르세요.'},{enableHighAccuracy:true,timeout:15000,maximumAge:5000})}
+$('locate').onclick=()=>locate();
+$('center-start').onclick=()=>{const c=map.getCenter();S.here=[c.lng,c.lat];showMe(S.here,5);recommend()};
+
+// ---------- 화면 전환 ----------
+const PANES=['recommend','draw','mine','course','run'];
+function show(m){PANES.forEach(k=>$('p-'+k).classList.toggle('hide',k!==m));document.querySelectorAll('header [data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));if(['recommend','draw','mine'].includes(m))S.prevMode=m;S.mode=m;
+  if(m!=='draw'){setData('draw',emptyFC)}else drawRender(); if(m==='mine')renderMine(); if(m!=='course'&&m!=='run'){setData('route',emptyFC);setData('climbs',emptyFC);setData('cues',emptyFC)} if(m!=='recommend')setData('cands',emptyFC); else renderCands()}
+document.querySelectorAll('header [data-mode]').forEach(b=>b.onclick=()=>{if(S.mode==='run')return;show(b.dataset.mode)});
+
+// ---------- 추천 ----------
+[10,15,30,45,60].forEach(m=>{const b=document.createElement('button');b.className='chip'+(m===S.minutes?' on':'');b.textContent=m+'분';b.onclick=()=>{S.minutes=m;document.querySelectorAll('#minutes .chip').forEach(x=>x.classList.toggle('on',x===b));updTarget()};$('minutes').appendChild(b)});
+$('pace').onchange=()=>{const p=parsePace($('pace').value);if(p&&p>=180&&p<=900){S.paceSec=p;store.set('tr_pace',p)}else $('pace').value=fmtPace(S.paceSec);updTarget()};
+function fmtPace(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function updTarget(){$('target').textContent=`→ 목표 약 ${fmtKm(S.minutes*60/S.paceSec*1000)}`}
+const savedPace=store.get('tr_pace',null);if(savedPace){S.paceSec=savedPace;$('pace').value=fmtPace(savedPace)}updTarget();
+$('go-rec').onclick=()=>{if(!S.here){$('rec-status').textContent='먼저 "내 위치"를 누르거나 "지도 가운데에서"를 쓰세요.';return}recommend()};
+function overlapRatio(coords){const rs=resampleSimple(coords,20),cell=new Map(),key=(p)=>Math.round(p[0]*7000)+'_'+Math.round(p[1]*9000);
+  rs.forEach((r,i)=>{const k=key(r.p);if(!cell.has(k))cell.set(k,[]);cell.get(k).push(i)});let rep=0;
+  rs.forEach((r,i)=>{const [a,b]=key(r.p).split('_').map(Number);let hit=false;for(let dx=-1;dx<=1&&!hit;dx++)for(let dy=-1;dy<=1&&!hit;dy++){const l=cell.get((a+dx)+'_'+(b+dy));if(l)for(const j of l)if(Math.abs(rs[j].s-r.s)>200&&hav(rs[j].p,r.p)<14){hit=true;break}}if(hit)rep++});return rep/rs.length}
+function similar(a,b){const A=new Set(resampleSimple(a,40).map(r=>Math.round(r.p[0]*2000)+'_'+Math.round(r.p[1]*2500))),B=new Set(resampleSimple(b,40).map(r=>Math.round(r.p[0]*2000)+'_'+Math.round(r.p[1]*2500)));let x=0;A.forEach(k=>{if(B.has(k))x++});return x/Math.min(A.size,B.size)}
+let recBusy=false;
+async function recommend(){if(recBusy)return;recBusy=true;$('go-rec').disabled=true;S.recs=[];renderCands();$('rec-list').innerHTML='';
+  const D=S.minutes*60/S.paceSec*1000,st=$('rec-status');const cands=[];
+  try{for(let h=0;h<360;h+=45){st.textContent=`길 찾는 중… ${cands.length+1}/8 방향`;let r=D/3.9,best=null;
+      for(let k=0;k<2;k++){const A=dest(S.here,h,r),B=dest(S.here,h+60,r);let res;try{res=await osrm([S.here,A,B,S.here])}catch(e){break}
+        const ratio=res.dist/D;if(!best||Math.abs(ratio-1)<Math.abs(best.dist/D-1))best=res;if(Math.abs(ratio-1)<0.12)break;r/=ratio}
+      if(best){best.ov=overlapRatio(best.coords);best.err=Math.abs(best.dist/D-1);cands.push(best)}}
+    let ok=cands.filter(c=>c.err<0.25).sort((a,b)=>(a.err+a.ov*1.5)-(b.err+b.ov*1.5));const pick=[];
+    for(const c of ok){if(pick.every(p=>similar(p.coords,c.coords)<0.6))pick.push(c);if(pick.length>=6)break}
+    if(!pick.length){st.textContent='이 근처에서 순환 코스를 못 만들었습니다. 시간을 바꾸거나 "그리기"를 쓰세요.';return}
+    st.textContent='고도 읽는 중…';const built=[];for(const c of pick){built.push(Object.assign(await buildCourse(c.coords,'','auto'),{ov:c.ov}))}
+    built.sort((a,b)=>a.gain-b.gain);let chosen=built.length<=3?built:[built[0],built[Math.floor(built.length/2)],built[built.length-1]];
+    const names=['언덕 적음','언덕 보통','언덕 많음'];chosen.forEach((c,i)=>c.name=(chosen.length===3?names[i]:'추천 '+(i+1))+` · ${S.minutes}분`);
+    S.recs=chosen;st.textContent=`${chosen.length}개 — 카드를 누르면 지도에서 강조, "이 코스" 누르면 상세`;renderCands();fit(chosen.flatMap(c=>c.coords));
+  }catch(e){st.textContent='오류: '+e.message}finally{recBusy=false;$('go-rec').disabled=false}}
+const COL=['#2b8a3e','#e67700','#c92a2a'];let selRec=-1;
+function renderCands(){setData('cands',{type:'FeatureCollection',features:S.recs.map((c,i)=>line(c.coords,{color:COL[i%3],sel:i===selRec}))});
+  $('rec-list').innerHTML='';S.recs.forEach((c,i)=>{const d=document.createElement('div');d.className='card'+(i===selRec?' sel':'');
+    d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><b style="color:${COL[i%3]}">${c.name}</b><button class="btn" style="padding:7px 12px">이 코스</button></div>
+    <div class="kv muted">${fmtKm(c.L)} · 약 ${Math.round(estTime(c)/60)}분 · 오르막 ${c.climbs.length}개 · 총 상승 ${Math.round(c.gain)} m${c.ov>0.15?` · 같은 길 왕복 ${Math.round(c.ov*100)}%`:''}</div>`;
+    d.onclick=()=>{selRec=i;renderCands()};d.querySelector('button').onclick=ev=>{ev.stopPropagation();openCourse(c)};$('rec-list').appendChild(d)})}
+
+// ---------- 그리기 ----------
+map.on('click',e=>{if(S.mode!=='draw')return;if(S.draw.length>=25)return;S.draw.push([e.lngLat.lng,e.lngLat.lat]);drawRoute()});
+$('d-undo').onclick=()=>{S.draw.pop();drawRoute()};$('d-clear').onclick=()=>{S.draw=[];drawRoute()};
+$('d-close').onclick=()=>{if(S.draw.length>=2){S.draw.push(S.draw[0]);drawRoute()}};
+let drawSeq=0;
+async function drawRoute(){const my=++drawSeq;drawRender();if(S.draw.length<2){S.drawRoute=null;setData('route',emptyFC);drawInfo();return}
+  try{const r=await osrm(S.draw);if(my!==drawSeq)return;S.drawRoute=r;setData('route',{type:'FeatureCollection',features:[line(r.coords)]});drawInfo()}catch(e){$('d-info').textContent='길 잇기 실패: '+e.message}}
+function drawRender(){setData('draw',{type:'FeatureCollection',features:S.draw.map(p=>pt(p))});if(S.mode==='draw'&&S.drawRoute)setData('route',{type:'FeatureCollection',features:[line(S.drawRoute.coords)]})}
+function drawInfo(){const r=S.drawRoute;$('d-use').disabled=!r;$('d-info').innerHTML=r?`<span>거리 <b>${fmtKm(r.dist)}</b></span><span>평지 기준 <b>${Math.round(r.dist/1000*S.paceSec/60)}분</b></span><span class="muted">점 ${S.draw.length}/25</span>`:''}
+$('d-use').onclick=async()=>{if(!S.drawRoute)return;$('d-use').disabled=true;$('d-info').textContent='고도 읽는 중…';try{const c=await buildCourse(S.drawRoute.coords,'내가 그린 코스','drawn');openCourse(c)}catch(e){$('d-info').textContent='오류: '+e.message}finally{$('d-use').disabled=false}};
+$('gpx').onchange=async ev=>{const f=ev.target.files[0];if(!f)return;const x=new DOMParser().parseFromString(await f.text(),'application/xml');
+  let pts=[...x.querySelectorAll('trkpt,rtept')].map(n=>[+n.getAttribute('lon'),+n.getAttribute('lat')]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+  if(pts.length<2){$('d-info').textContent='GPX에서 점을 못 찾았습니다.';return}const thin=[pts[0]];for(const p of pts)if(hav(thin[thin.length-1],p)>=8)thin.push(p);
+  $('d-info').textContent='고도 읽는 중…';try{openCourse(await buildCourse(thin,f.name.replace(/\.gpx$/i,''),'gpx'))}catch(e){$('d-info').textContent='오류: '+e.message}};
+
+// ---------- 코스 상세 ----------
+function openCourse(c){S.course=c;c.cues=planCues(c);show('course');$('c-title').textContent=c.name||'코스';
+  $('c-kv').innerHTML=`<span>거리 <b>${fmtKm(c.L)}</b></span><span>예상 <b>${Math.round(estTime(c)/60)}분</b></span><span>오르막 <b>${c.climbs.length}</b>개</span><span>총 상승 <b>${Math.round(c.gain)} m</b></span>`;
+  setData('route',{type:'FeatureCollection',features:[line(c.coords)]});
+  setData('climbs',{type:'FeatureCollection',features:c.climbs.map(h=>line(c.rs.filter(r=>r.s>=h.s0&&r.s<=h.s1).map(r=>r.p)))});
+  setData('cues',{type:'FeatureCollection',features:c.cues.map(q=>pt(posAt(c,q.at)))});fit(c.coords);
+  drawProfile($('prof'),c,null);renderCues($('c-cues'),c,new Set())}
+function posAt(c,s){const i=Math.min(c.rs.length-1,Math.max(0,Math.round(s/STEP)));return c.rs[i].p}
+function renderCues(el,c,fired){el.innerHTML=c.cues.map(q=>`<div class="cue${fired.has(q.id)?' done':''}"><span>${q.label}</span><span>${fmtKm(q.at)}</span></div>`).join('')}
+document.querySelectorAll('[data-talk]').forEach(b=>b.onclick=()=>{S.talk=b.dataset.talk;document.querySelectorAll('[data-talk]').forEach(x=>x.classList.toggle('on',x===b));if(S.course){S.course.cues=planCues(S.course);renderCues($('c-cues'),S.course,new Set());setData('cues',{type:'FeatureCollection',features:S.course.cues.map(q=>pt(posAt(S.course,q.at)))})}});
+$('c-back').onclick=()=>show(S.prevMode);
+$('c-test').onclick=()=>{unlockAudio();play('climb_start')};
+$('c-save').onclick=()=>{const c=S.course;const list=store.get('tr_courses',[]);const name=prompt('코스 이름',c.name||'내 코스');if(name===null)return;c.name=name;list.unshift({name,coords:c.coords,source:c.source,created:Date.now()});store.set('tr_courses',list.slice(0,30));$('c-title').textContent=name;alert('이 폰에 저장했습니다(내 코스 탭).')};
+$('c-gpx').onclick=()=>{const c=S.course;download((c.name||'course')+'.gpx',gpxOf(c.name||'TerraRun 코스',c.rs.map((r,i)=>({lat:r.p[1],lon:r.p[0],ele:c.e[i]}))),'application/gpx+xml')};
+function gpxOf(name,pts){const esc=s=>String(s).replace(/[<&>]/g,m=>({'<':'&lt;','&':'&amp;','>':'&gt;'}[m]));return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="TerraRun 코스 도구" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>\n${pts.map(p=>`<trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${p.ele!=null?`<ele>${p.ele.toFixed(1)}</ele>`:''}${p.t?`<time>${new Date(p.t).toISOString()}</time>`:''}</trkpt>`).join('\n')}\n</trkseg></trk></gpx>`}
+function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
+function drawProfile(cv,c,sNow){const dpr=window.devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
+  const lo=Math.min(...c.e)-2,hi=Math.max(...c.e)+2,X=s=>8+(w-16)*s/c.L,Y=v=>h-18-(h-28)*(v-lo)/(hi-lo||1);
+  c.climbs.forEach(k=>{g.fillStyle='rgba(134,46,156,.13)';g.fillRect(X(k.s0),4,X(k.s1)-X(k.s0),h-22)});
+  g.beginPath();c.e.forEach((v,i)=>{const x=X(c.rs[i].s),y=Y(v);i?g.lineTo(x,y):g.moveTo(x,y)});g.strokeStyle='#d9480f';g.lineWidth=2;g.stroke();
+  g.fillStyle='#6f6a62';g.font='11px sans-serif';g.fillText(`${Math.round(lo+2)} m`,8,h-4);g.fillText(`${Math.round(hi-2)} m`,8,12);g.fillText(fmtKm(c.L),w-60,h-4);
+  (c.cues||[]).forEach(q=>{g.fillStyle='#1f1d1a';g.fillRect(X(q.at)-1,h-16,2,6)});
+  if(sNow!=null){g.strokeStyle='#2b8a3e';g.lineWidth=2;g.beginPath();g.moveTo(X(sNow),4);g.lineTo(X(sNow),h-18);g.stroke()}}
+
+// ---------- 내 코스 ----------
+function renderMine(){const list=store.get('tr_courses',[]);const el=$('mine-list');if(!list.length){el.textContent='아직 없습니다.';}else{el.innerHTML='';list.forEach((c,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><b>${c.name.replace(/</g,'&lt;')}</b><span><button class="chip">열기</button> <button class="chip">삭제</button></span></div><div class="muted">${fmtKm(lengthOf(c.coords))} · ${new Date(c.created).toLocaleDateString('ko-KR')}</div>`;
+  const [o,del]=d.querySelectorAll('button');o.onclick=async()=>{o.textContent='…';try{openCourse(await buildCourse(c.coords,c.name,c.source))}catch(e){alert(e.message)}};del.onclick=()=>{if(!confirm('삭제할까요?'))return;list.splice(i,1);store.set('tr_courses',list);renderMine()};el.appendChild(d)})}
+  const lr=store.get('tr_lastrun',null);const l=$('lastrun');if(!lr){l.textContent='없습니다.'}else{l.innerHTML=`<div class="card"><b>${lr.name}</b> · ${new Date(lr.start).toLocaleString('ko-KR')}<div class="muted">위치 ${lr.fixes.length}점 · 큐 ${lr.cues.length}개 발화</div><div class="row"><button class="btn sec" id="lr-gpx">GPX</button><button class="btn sec" id="lr-csv">큐 기록 CSV</button></div></div>`;
+    $('lr-gpx').onclick=()=>download('run_'+lr.start+'.gpx',gpxOf(lr.name,lr.fixes.map(f=>({lat:f.lat,lon:f.lon,t:f.t}))),'application/gpx+xml');$('lr-csv').onclick=()=>download('cues_'+lr.start+'.csv',cueCsv(lr),'text/csv')}}
+function cueCsv(lr){return '﻿cue_id,label,planned_m,fired_s_m,fired_time,lat,lon,acc_m,offset_m\n'+lr.cues.map(q=>[q.id,`"${q.label}"`,q.at.toFixed(0),q.s.toFixed(0),new Date(q.t).toISOString(),q.lat.toFixed(6),q.lon.toFixed(6),Math.round(q.acc||0),(q.s-q.at).toFixed(0)].join(',')).join('\n')}
+
+// ---------- 달리기 엔진 ----------
+const RUN={};
+function startRun(sim){const c=S.course;if(!c)return;unlockAudio();
+  const p5=resampleSimple(c.coords,5);Object.assign(RUN,{on:true,sim,c,p5,idx:0,s:0,fired:new Set(),off:false,farSince:null,nearSince:null,pend:null,pendN:0,hist:[],fixes:[],cues:[],start:Date.now(),watch:null,timer:null,v:1000/S.paceSec,lock:null});
+  show('run');$('r-title').textContent=c.name||'코스';$('r-mode').textContent=sim?'시뮬레이션 5배속':'GPS';
+  requestWake();
+  if(sim){let s=0;RUN.timer=setInterval(()=>{s+=RUN.v*5;const p=posAt5(Math.min(s,c.L));const n=(Math.random()-0.5)*0.00004;onFix(p[1]+n,p[0]+n,6,Date.now(),null);if(s>c.L+30)stopRun()},1000)}
+  else{if(!navigator.geolocation){alert('위치를 쓸 수 없습니다');return stopRun()}RUN.watch=navigator.geolocation.watchPosition(p=>onFix(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.timestamp,p.coords.speed),e=>{$('runbig').textContent='위치 오류: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}
+  fire({id:'intro'})}
+function posAt5(s){const i=Math.min(RUN.p5.length-1,Math.max(0,Math.round(s/5)));return RUN.p5[i].p}
+async function requestWake(){try{if('wakeLock' in navigator){RUN.lock=await navigator.wakeLock.request('screen')}}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(RUN.on&&document.visibilityState==='visible')requestWake()});
+function nearest(lat,lon,from,to){const p5=RUN.p5,k=Math.cos(rad(lat))*111320;let best=-1,bd=1e9;for(let i=Math.max(0,from);i<=Math.min(p5.length-1,to);i++){const dx=(p5[i].p[0]-lon)*k,dy=(p5[i].p[1]-lat)*110540,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}return {i:best,d:Math.sqrt(bd)}}
+function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fixes.push({lat,lon,acc,t});showMe([lon,lat],acc);
+  if(acc>35){status(`GPS 약함 ±${Math.round(acc)} m — 기다리는 중`);return}
+  const c=RUN.c;let cand=RUN.off?nearest(lat,lon,RUN.idx-20,RUN.p5.length-1):nearest(lat,lon,RUN.idx-10,RUN.idx+160);
+  // 이탈 판정
+  if(cand.d>40){RUN.nearSince=null;RUN.farSince=RUN.farSince||now;if(!RUN.off&&now-RUN.farSince>=(RUN.sim?2000:10000)){RUN.off=true;play('off_route');RUN.cues.push(rec('off_route',lat,lon,acc,t))}}
+  else{RUN.farSince=null;if(RUN.off){if(cand.d<=25){RUN.nearSince=RUN.nearSince||now;if(now-RUN.nearSince>=(RUN.sim?1000:5000)){RUN.off=false;RUN.nearSince=null;play('back_on');RUN.idx=cand.i;
+      c.cues.forEach(q=>{if(q.at<cand.i*5&&!RUN.fired.has(q.id)){RUN.fired.add(q.id)}})}}}
+    else{const ns=cand.i*5;const jump=ns-RUN.s;const allow=RUN.v*3+2*acc+30;
+      if(jump>allow){if(RUN.pend!=null&&Math.abs(RUN.pend-ns)<20){RUN.pendN++}else{RUN.pend=ns;RUN.pendN=1}if(RUN.pendN>=3){RUN.idx=cand.i;RUN.pend=null;c.cues.forEach(q=>{if(q.at<ns-30&&!RUN.fired.has(q.id))RUN.fired.add(q.id)})}}
+      else if(ns>=RUN.s){RUN.idx=cand.i;RUN.pend=null}}}
+  const sNew=RUN.idx*5;RUN.hist.push({t:now,s:sNew});RUN.hist=RUN.hist.filter(h=>now-h.t<=12000);RUN.s=sNew;
+  if(RUN.hist.length>=3){const a=RUN.hist[0],b=RUN.hist[RUN.hist.length-1];const v=(b.s-a.s)/((b.t-a.t)/1000||1);if(v>0.8&&v<7)RUN.v=v}
+  const age=Math.min(3,Math.max(0,(now-t)/1000));const sEff=RUN.s+RUN.v*(age+0.8);
+  if(!RUN.off)for(const q of c.cues){if(!RUN.fired.has(q.id)&&q.at<=sEff){fire(q);RUN.cues.push(Object.assign(rec(q.id,lat,lon,acc,t),{label:q.label,at:q.at}))}}
+  const next=c.cues.find(q=>!RUN.fired.has(q.id));
+  status(RUN.off?'<span class="warn">경로 이탈 — 코스로 돌아오세요</span>':next?`${next.label.split(' (')[0]}까지 ${fmtKm(Math.max(0,next.at-RUN.s))}`:'끝!');
+  $('r-kv').innerHTML=`<span>진행 <b>${fmtKm(RUN.s)}</b> / ${fmtKm(c.L)}</span><span>페이스 <b>${fmtPace(Math.round(1000/RUN.v))}</b></span><span>정확도 ±${Math.round(acc)} m</span><span>경로까지 ${Math.round(cand.d)} m</span>`;
+  drawProfile($('rprof'),c,RUN.s);if(!RUN.sim)map.easeTo({center:[lon,lat],duration:500})}
+function rec(id,lat,lon,acc,t){return {id,label:id,at:0,s:RUN.s,t,lat,lon,acc}}
+function fire(q){RUN.fired.add(q.id);const qq=RUN.c.cues.find(x=>x.id===q.id);if(qq)play(qq.clip)}
+function status(h){$('runbig').innerHTML=h}
+function stopRun(){if(!RUN.on)return;RUN.on=false;if(RUN.watch!=null)navigator.geolocation.clearWatch(RUN.watch);if(RUN.timer)clearInterval(RUN.timer);try{RUN.lock&&RUN.lock.release()}catch(e){}
+  if(!RUN.sim){store.set('tr_lastrun',{name:RUN.c.name||'코스',start:RUN.start,fixes:RUN.fixes.slice(-20000),cues:RUN.cues.filter(q=>q.id!=='off_route'&&q.id!=='back_on'&&q.at!=null)})}
+  setData('me',emptyFC);openCourse(RUN.c);if(!RUN.sim){show('mine')}}
+$('c-run').onclick=()=>startRun(false);$('c-sim').onclick=()=>startRun(true);$('r-stop').onclick=()=>{if(confirm('끝낼까요? 기록은 "내 코스" 탭에 남습니다.'))stopRun()};
+window.addEventListener('resize',()=>{if(S.mode==='course'&&S.course)drawProfile($('prof'),S.course,null)});
+</script>
+</body>
+</html>
