@@ -230,11 +230,14 @@ function planCues(c){const v=1000/S.paceSec,lead=Math.max(15,v*4),cues=[];const 
 // ---------- 소리 ----------
 const CLIPS=['intro0','intro1','intro2','intro3','intro4','intro5','climb_start','summit','flat_resume','false_summit_bell','done','off_route','back_on'];
 const audio={};CLIPS.forEach(k=>{const a=new Audio(`clips/${k}.mp3`);a.preload='auto';audio[k]=a});
-const aq=[];let playing=false;
+const aq=[];let playing=false,aGen=0;   // aGen: 초기화 전에 걸어 둔 끝 처리가 새 안내를 풀지 않게
 function play(k){aq.push(k);pump()}
-function pump(){if(playing||!aq.length){if(!playing&&!aq.length)musicDuck(false);return}const k=aq.shift();musicDuck(true);
-  if(typeof k==='object'&&k.tts){playing=true;let done=false;const fin=()=>{if(done)return;done=true;playing=false;setTimeout(pump,300)};speak(k.tts).then(fin);return}
-  const a=audio[k];if(!a)return pump();playing=true;a.currentTime=0;a.onended=()=>{playing=false;setTimeout(pump,300)};a.play().catch(()=>{playing=false;pump()})}
+function pump(){if(playing||!aq.length){if(!playing&&!aq.length)musicDuck(false);return}const k=aq.shift(),g=aGen;musicDuck(true);
+  if(typeof k==='object'&&k.tts){playing=true;let done=false;const fin=()=>{if(done||g!==aGen)return;done=true;playing=false;setTimeout(pump,300)};speak(k.tts).then(fin);return}
+  const a=audio[k];if(!a)return pump();playing=true;let done=false,tm=null;const fin=gap=>{if(done||g!==aGen)return;done=true;clearTimeout(tm);a.onended=a.onerror=null;playing=false;setTimeout(pump,gap)};
+  // 끝 이벤트가 안 오면(아이폰 중단·파일 오류) 대기열이 영영 멈추므로 길이+2초 뒤 넘긴다
+  a.currentTime=0;a.onended=a.onerror=()=>fin(300);tm=setTimeout(()=>fin(0),(isFinite(a.duration)&&a.duration>0?a.duration*1000:6000)+2000);a.play().catch(()=>fin(0))}
+function resetAudio(){aGen++;aq.length=0;playing=false;try{'speechSynthesis' in window&&speechSynthesis.cancel()}catch(e){}Object.values(audio).forEach(a=>{a.onended=a.onerror=null;a.pause()})}
 // ---------- 음악: 추천 곡(이 맥의 로컬 서버만) 또는 내 음악 파일, 안내 때 1/4로 낮춤(A2 시연의 덕킹과 같은 생각) ----------
 const MUS={lib:[],mine:[],list:[],i:0,el:null,ctx:null,gain:null,on:false};
 async function loadMusicLib(){try{const r=await fetch('local-music/index.json',{cache:'no-cache'});MUS.lib=r.ok?await r.json():[]}catch(e){MUS.lib=[]}
@@ -258,7 +261,8 @@ const koVoice=()=>('speechSynthesis' in window)?speechSynthesis.getVoices().find
 function speak(text){return new Promise(res=>{if(!('speechSynthesis' in window))return res();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';const v=koVoice();if(v)u.voice=v;u.rate=1.05;u.onend=u.onerror=()=>res();speechSynthesis.cancel();speechSynthesis.speak(u);setTimeout(res,9000)})}
 // iOS 사파리: 짧은 안내 동안만 다른 앱 소리를 낮추라고 알린다(지원하는 기기만)
 try{if(navigator.audioSession)navigator.audioSession.type='transient'}catch(e){}
-function unlockAudio(){try{if('speechSynthesis' in window){speechSynthesis.getVoices();const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}catch(e){}Object.values(audio).forEach(a=>{const v=a.volume;a.volume=0;a.play().then(()=>{a.pause();a.currentTime=0;a.volume=v}).catch(()=>{a.volume=v})})}
+function unlockAudio(){try{if('speechSynthesis' in window){speechSynthesis.getVoices();const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}catch(e){}
+  Object.values(audio).forEach(a=>{if(!a.paused)return;a.muted=true;a.play().catch(()=>{});a.pause();a.currentTime=0;a.muted=false})}
 
 // ---------- 지도 ----------
 const map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/bright',center:[126.978,37.5665],zoom:12,attributionControl:{compact:true}});
@@ -351,7 +355,7 @@ function posAt(c,s){const i=Math.min(c.rs.length-1,Math.max(0,Math.round(s/STEP)
 function renderCues(el,c,fired){el.innerHTML=c.cues.map(q=>`<div class="cue${fired.has(q.id)?' done':''}"><span>${q.label}</span><span>${fmtKm(q.at)}</span></div>`).join('')}
 document.querySelectorAll('[data-talk]').forEach(b=>b.onclick=()=>{S.talk=b.dataset.talk;document.querySelectorAll('[data-talk]').forEach(x=>x.classList.toggle('on',x===b));if(S.course){S.course.cues=planCues(S.course);renderCues($('c-cues'),S.course,new Set());setData('cues',{type:'FeatureCollection',features:S.course.cues.map(q=>pt(posAt(S.course,q.at)))})}});
 $('c-back').onclick=()=>show(S.prevMode);
-$('c-test').onclick=()=>{unlockAudio();play('climb_start')};
+$('c-test').onclick=()=>{resetAudio();unlockAudio();play('climb_start')};
 $('c-save').onclick=()=>{const c=S.course;const list=store.get('tr_courses',[]);const name=prompt('코스 이름',c.name||'내 코스');if(name===null)return;c.name=name;list.unshift({name,coords:c.coords,source:c.source,created:Date.now()});store.set('tr_courses',list.slice(0,30));$('c-title').textContent=name;alert('이 폰에 저장했습니다(내 코스 탭).')};
 $('c-gpx').onclick=()=>{const c=S.course;download((c.name||'course')+'.gpx',gpxOf(c.name||'TerraRun 코스',c.rs.map((r,i)=>({lat:r.p[1],lon:r.p[0],ele:c.e[i]}))),'application/gpx+xml')};
 function gpxOf(name,pts){const esc=s=>String(s).replace(/[<&>]/g,m=>({'<':'&lt;','&':'&amp;','>':'&gt;'}[m]));return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="TerraRun 코스 도구" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>\n${pts.map(p=>`<trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${p.ele!=null?`<ele>${p.ele.toFixed(1)}</ele>`:''}${p.t?`<time>${new Date(p.t).toISOString()}</time>`:''}</trkpt>`).join('\n')}\n</trkseg></trk></gpx>`}
@@ -376,28 +380,30 @@ function cueCsv(lr){return '﻿cue_id,label,planned_m,fired_s_m,fired_time,lat,l
 
 // ---------- 달리기 엔진 ----------
 const RUN={};
-function startRun(sim){const c=S.course;if(!c)return;unlockAudio();
-  const p5=resampleSimple(c.coords,5);Object.assign(RUN,{on:true,sim,c,p5,idx:0,s:0,fired:new Set(),off:false,farSince:null,nearSince:null,pend:null,pendN:0,hist:[],fixes:[],cues:[],start:Date.now(),watch:null,timer:null,v:1000/S.paceSec,lock:null});
+function startRun(sim){const c=S.course;if(!c)return;resetAudio();unlockAudio();requestWake();
+  const p5=resampleSimple(c.coords,5);Object.assign(RUN,{on:true,sim,c,p5,idx:0,s:0,fired:new Set(),off:false,farSince:null,nearSince:null,lastOk:null,hist:[],fixes:[],cues:[],start:Date.now(),watch:null,timer:null,v:1000/S.paceSec});
   show('run');$('r-title').textContent=c.name||'코스';$('r-mode').textContent=sim?`시뮬레이션 ${S.simSpd}배속`:'GPS';
-  requestWake();
   RUN.trail=[];startMusic();
   if(sim){let s=0;RUN.timer=setInterval(()=>{s+=RUN.v*S.simSpd;const p=posAt5(Math.min(s,c.L));const n=(Math.random()-0.5)*0.00004;onFix(p[1]+n,p[0]+n,6,Date.now(),null);if(s>c.L+30)stopRun()},1000)}
   else{if(!navigator.geolocation){alert('위치를 쓸 수 없습니다');return stopRun()}RUN.watch=navigator.geolocation.watchPosition(p=>onFix(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.timestamp,p.coords.speed),e=>{$('runbig').textContent='위치 오류: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}
   fire({id:'intro'})}
 function posAt5(s){const i=Math.min(RUN.p5.length-1,Math.max(0,Math.round(s/5)));return RUN.p5[i].p}
-async function requestWake(){try{if('wakeLock' in navigator){RUN.lock=await navigator.wakeLock.request('screen')}}catch(e){}}
-document.addEventListener('visibilitychange',()=>{if(RUN.on&&document.visibilityState==='visible')requestWake()});
+// 화면 켜짐: 아이폰은 클릭 안에서 요청해야 받아 주므로 시작 버튼에서 바로 부른다. 다른 앱에 다녀오면 풀리므로 다시 잡는다
+let WAKE=null;
+async function requestWake(){try{if('wakeLock' in navigator&&(!WAKE||WAKE.released))WAKE=await navigator.wakeLock.request('screen')}catch(e){}}
+function releaseWake(){try{WAKE&&WAKE.release()}catch(e){}WAKE=null}
+document.addEventListener('visibilitychange',()=>{if((RUN.on||FREE.on)&&document.visibilityState==='visible')requestWake()});
 function nearest(lat,lon,from,to){const p5=RUN.p5,k=Math.cos(rad(lat))*111320;let best=-1,bd=1e9;for(let i=Math.max(0,from);i<=Math.min(p5.length-1,to);i++){const dx=(p5[i].p[0]-lon)*k,dy=(p5[i].p[1]-lat)*110540,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}return {i:best,d:Math.sqrt(bd)}}
 function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fixes.push({lat,lon,acc,t});showMe([lon,lat],acc);
   if(acc>35){status(`GPS 약함 ±${Math.round(acc)} m — 기다리는 중`);return}
   const c=RUN.c;let cand=RUN.off?nearest(lat,lon,RUN.idx-20,RUN.p5.length-1):nearest(lat,lon,RUN.idx-10,RUN.idx+160);
   // 이탈 판정
   if(cand.d>40){RUN.nearSince=null;RUN.farSince=RUN.farSince||now;if(!RUN.off&&now-RUN.farSince>=(RUN.sim?2000:10000)){RUN.off=true;play('off_route');RUN.cues.push(rec('off_route',lat,lon,acc,t))}}
-  else{RUN.farSince=null;if(RUN.off){if(cand.d<=25){RUN.nearSince=RUN.nearSince||now;if(now-RUN.nearSince>=(RUN.sim?1000:5000)){RUN.off=false;RUN.nearSince=null;play('back_on');RUN.idx=cand.i;
+  else{RUN.farSince=null;if(RUN.off){if(cand.d<=25){RUN.nearSince=RUN.nearSince||now;if(now-RUN.nearSince>=(RUN.sim?1000:5000)){RUN.off=false;RUN.nearSince=null;play('back_on');RUN.idx=cand.i;RUN.lastOk=now;
       c.cues.forEach(q=>{if(q.at<cand.i*5&&!RUN.fired.has(q.id)){RUN.fired.add(q.id)}})}}}
-    else{const ns=cand.i*5;const jump=ns-RUN.s;const allow=RUN.v*3+2*acc+30;
-      if(jump>allow){if(RUN.pend!=null&&Math.abs(RUN.pend-ns)<20){RUN.pendN++}else{RUN.pend=ns;RUN.pendN=1}if(RUN.pendN>=3){RUN.idx=cand.i;RUN.pend=null;c.cues.forEach(q=>{if(q.at<ns-30&&!RUN.fired.has(q.id))RUN.fired.add(q.id)})}}
-      else if(ns>=RUN.s){RUN.idx=cand.i;RUN.pend=null}}}
+    else{const ns=cand.i*5;const jump=ns-RUN.s;const dtOk=(now-(RUN.lastOk||now))/1000;const base=RUN.v*3+2*acc+30;const allow=Math.max(RUN.v*3,6.5*dtOk)+2*acc+30;
+      // 같은 길을 오가는 구간에서 반대편으로 튄 점은 시간상 못 갈 거리라 버린다. GPS가 끊겼다 돌아오면 그만큼 넓게 받는다(그때만 지나친 큐를 건너뜀)
+      if(jump<=allow){RUN.lastOk=now;if(ns>=RUN.s){if(jump>base)c.cues.forEach(q=>{if(q.at<ns-30&&!RUN.fired.has(q.id))RUN.fired.add(q.id)});RUN.idx=cand.i}}}}
   const sNew=RUN.idx*5;RUN.hist.push({t:now,s:sNew});RUN.hist=RUN.hist.filter(h=>now-h.t<=12000);RUN.s=sNew;
   if(RUN.hist.length>=3){const a=RUN.hist[0],b=RUN.hist[RUN.hist.length-1];const v=(b.s-a.s)/((b.t-a.t)/1000||1);if(v>0.8&&v<7)RUN.v=v}
   const age=Math.min(3,Math.max(0,(now-t)/1000));const sEff=RUN.s+RUN.v*(age+0.8);
@@ -410,7 +416,7 @@ function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fix
 function rec(id,lat,lon,acc,t){return {id,label:id,at:0,s:RUN.s,t,lat,lon,acc}}
 function fire(q){RUN.fired.add(q.id);const qq=RUN.c.cues.find(x=>x.id===q.id);if(qq)play(qq.tts?{tts:qq.tts}:qq.clip)}
 function status(h){$('runbig').innerHTML=h}
-function stopRun(){if(!RUN.on)return;RUN.on=false;stopMusic();setData('trail',emptyFC);if(RUN.watch!=null)navigator.geolocation.clearWatch(RUN.watch);if(RUN.timer)clearInterval(RUN.timer);try{RUN.lock&&RUN.lock.release()}catch(e){}
+function stopRun(){if(!RUN.on)return;RUN.on=false;stopMusic();setData('trail',emptyFC);if(RUN.watch!=null)navigator.geolocation.clearWatch(RUN.watch);if(RUN.timer)clearInterval(RUN.timer);releaseWake();
   if(!RUN.sim){store.set('tr_lastrun',{name:RUN.c.name||'코스',start:RUN.start,fixes:RUN.fixes.slice(-20000),cues:RUN.cues.filter(q=>q.id!=='off_route'&&q.id!=='back_on'&&q.at!=null)})}
   setData('me',emptyFC);openCourse(RUN.c);if(!RUN.sim){show('mine')}}
 $('c-run').onclick=()=>startRun(false);$('c-sim').onclick=()=>startRun(true);$('r-stop').onclick=()=>{if(confirm('끝낼까요? 기록은 "내 코스" 탭에 남습니다.'))stopRun()};
@@ -495,7 +501,9 @@ function detectAhead(coords,stop,brLeg){const rs=resampleSimple(coords,10);if(rs
       let lo=i,hi=j;if(type==='up'){for(let k=Math.max(0,i-2);k<=Math.min(n-1,i+1);k++)if(e[k]<e[lo])lo=k;for(let k=Math.max(0,j-1);k<=Math.min(n-1,j+2);k++)if(e[k]>e[hi])hi=k}
       else{for(let k=Math.max(0,i-2);k<=Math.min(n-1,i+1);k++)if(e[k]>e[lo])lo=k;for(let k=Math.max(0,j-1);k<=Math.min(n-1,j+2);k++)if(e[k]<e[hi])hi=k}
       const h=Math.abs(e[hi]-e[lo]),len=rs[hi].s-rs[lo].s;if(h>=minH&&len>=50)evs.push({type,d0:rs[lo].s,d1:rs[hi].s,h,len,avg:h/len,a0:rs[lo].p,a1:rs[hi].p,open:hi>=n-2&&stop!=='end'});i=j+1}};
-  scan(x=>x>=0.03,'up',4);scan(x=>x<=-0.035,'down',5);evs.sort((a,b)=>a.d0-b.d0);return {rs,e,L,evs}}
+  scan(x=>x>=0.03,'up',4);scan(x=>x<=-0.035,'down',5);
+  // 위성 고도(SRTM)는 건물 높이가 섞여 고층가에 가짜 오르막이 생긴다 — 평균 15% 넘는 오르막은 길로 보지 않는다(여의도 실측)
+  const real=evs.filter(ev=>!(ev.type==='up'&&ev.avg>0.15));real.sort((a,b)=>a.d0-b.d0);return {rs,e,L,evs:real}}
 // ---------- 말 (거리 예고는 브라우저 음성, 시작·정상은 녹음 클립) ----------
 const r10=x=>Math.max(10,Math.round(x/10)*10),r50=x=>Math.max(50,Math.round(x/50)*50);
 function climbWord(avg){return avg>=0.08?'가파른 ':avg<0.05?'완만한 ':''}
@@ -503,23 +511,23 @@ function preText(ev,dist){if(ev.type==='up')return `${r50(dist)}미터 앞, ${cl
   return `${r50(dist)}미터 앞, 내리막이에요. 보폭을 줄여요.`}
 function soonText(ev){return ev.type==='up'?('곧 오르막이에요.'+(ev.open?'':` 약 ${r10(ev.len)}미터.`)):'곧 내리막이에요. 보폭을 줄여요.'}
 // ---------- 시작·멈춤 ----------
-async function freeStart(sim){if(FREE.on)return;unlockAudio();const st=$('f-status');
+async function freeStart(sim){if(FREE.on)return;resetAudio();unlockAudio();requestWake();const st=$('f-status');
   const begin=async(lat,lon)=>{st.textContent='근처 길 지도와 높낮이를 받는 중… (10~20초)';
     try{const [a]=await Promise.all([areaData(lat,lon,st),preloadTiles(lon,lat,AREA_R)]);FREE.G=buildGraph(a.j,a.center);FREE.G.r=a.j.r||AREA_R;if(a.j.center)await preloadTiles(a.center[0],a.center[1],a.j.r||AREA_R)}
-    catch(e){st.textContent='길 지도를 못 받았습니다 — '+e.message+'.';return}
-    if(!FREE.G.segs.length){st.textContent='이 근처에 걷고 뛸 수 있는 길 정보가 없습니다.';return}
+    catch(e){releaseWake();st.textContent='길 지도를 못 받았습니다 — '+e.message+'.';return}
+    if(!FREE.G.segs.length){releaseWake();st.textContent='이 근처에 걷고 뛸 수 있는 길 정보가 없습니다.';return}
     st.textContent=`길 ${FREE.G.segs.length.toLocaleString()}구간 받음. ${sim?'시뮬레이션 시작':'달리기 시작 — 움직이면 방향을 잡습니다'}`;
-    Object.assign(FREE,{on:true,sim,start:Date.now(),fixes:[],log:[],ann:[],prevSeg:null,active:null,head:null,lastLook:null,v:1000/S.paceSec,offSince:null,watch:null,timer:null,lock:null,reloading:false,remSaid:false});
+    Object.assign(FREE,{on:true,sim,start:Date.now(),fixes:[],log:[],ann:[],prevSeg:null,active:null,head:null,lastLook:null,v:1000/S.paceSec,offSince:null,watch:null,timer:null,reloading:false,remSaid:false});
     $('f-setup').classList.add('hide');$('f-run').classList.remove('hide');$('f-mode').textContent=sim?`시뮬레이션 ${S.simSpd}배속`:'GPS';
-    FREE.lock=null;try{if('wakeLock' in navigator)FREE.lock=await navigator.wakeLock.request('screen')}catch(e){}
+    requestWake();
     play({tts:'전방 안내를 시작할게요. 앞에 오르막이 있으면 미리 알려 드릴게요.'});
     if(sim)freeSim(lat,lon);
     else FREE.watch=navigator.geolocation.watchPosition(p=>freeFix(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.timestamp,p.coords.heading,p.coords.speed),e=>{$('fbig').textContent='위치 오류: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000})};
   if(sim){const o=$('f-pack').selectedOptions[0];if(o&&o.dataset.c){const c=JSON.parse(o.dataset.c);map.jumpTo({center:c,zoom:16});begin(c[1],c[0]);return}const c=map.getCenter();begin(c.lat,c.lng);return}
   if(!navigator.geolocation){st.textContent='이 브라우저는 위치를 쓸 수 없습니다.';return}
   st.textContent='위치 잡는 중…';navigator.geolocation.getCurrentPosition(p=>{showMe([p.coords.longitude,p.coords.latitude],p.coords.accuracy);map.jumpTo({center:[p.coords.longitude,p.coords.latitude],zoom:16});begin(p.coords.latitude,p.coords.longitude)},
-    e=>{st.textContent='위치를 못 받았습니다('+e.message+'). 브라우저 위치 권한을 켜 주세요.'},{enableHighAccuracy:true,timeout:20000,maximumAge:0})}
-function freeStop(){if(!FREE.on)return;FREE.on=false;if(FREE.watch!=null)navigator.geolocation.clearWatch(FREE.watch);if(FREE.timer)clearInterval(FREE.timer);try{FREE.lock&&FREE.lock.release()}catch(e){}
+    e=>{releaseWake();st.textContent='위치를 못 받았습니다('+e.message+'). 브라우저 위치 권한을 켜 주세요.'},{enableHighAccuracy:true,timeout:20000,maximumAge:0})}
+function freeStop(){if(!FREE.on)return;FREE.on=false;if(FREE.watch!=null)navigator.geolocation.clearWatch(FREE.watch);if(FREE.timer)clearInterval(FREE.timer);releaseWake();resetAudio();musicDuck(false);
   if(!FREE.sim)store.set('tr_lastfree',{start:FREE.start,fixes:FREE.fixes.slice(-20000),log:FREE.log});
   $('f-setup').classList.remove('hide');$('f-run').classList.add('hide');setData('look',emptyFC);setData('lookev',emptyFC);setData('me',emptyFC);
   $('f-status').textContent=FREE.sim?'시뮬레이션 끝.':'끝. 기록은 "내 코스" 탭 → 지난 자유 달리기에 있습니다.';if(!FREE.sim)show('mine')}
@@ -536,8 +544,8 @@ function freeSim(lat,lon){const G=FREE.G;let m=matchSeg(G,[lon,lat],null,60,null
 function freeFix(lat,lon,acc,t,gHead,spd){if(!FREE.on)return;const now=Date.now(),p=[lon,lat];FREE.fixes.push({lat,lon,acc,t});showMe(p,acc);
   map.easeTo({center:p,duration:500});
   if(acc>35){fStatus(`GPS 약함 ±${Math.round(acc)} m — 기다리는 중`);return}
-  // 진행 방향: 최근 15초 안에서 12 m 이상 움직인 만큼으로 잰다(폰이 주는 heading은 멈추면 사라진다)
-  const fx=FREE.fixes;let head=null;for(let i=fx.length-2;i>=0&&now-fx[i].t<=15000+Math.max(0,now-t);i--){const d=hav([fx[i].lon,fx[i].lat],p);if(d>=12){head=brg([fx[i].lon,fx[i].lat],p);break}}
+  // 진행 방향: 최근 15초 안에서 16 m(정확도가 나쁘면 1.5배) 이상 움직인 만큼으로 잰다. 신호등에 서 있을 때 흔들림으로 뒤집히지 않게(폰이 주는 heading은 멈추면 사라진다)
+  const fx=FREE.fixes;let head=null;for(let i=fx.length-2;i>=0&&now-fx[i].t<=15000+Math.max(0,now-t);i--){const d=hav([fx[i].lon,fx[i].lat],p);if(d>=Math.max(16,acc*1.5)){head=brg([fx[i].lon,fx[i].lat],p);break}}
   if(head==null&&gHead!=null&&gHead>=0&&spd!=null&&spd>=1)head=gHead;
   if(head!=null)FREE.head=head;
   // 속도(최근 12초)
@@ -552,6 +560,8 @@ function freeFix(lat,lon,acc,t,gHead,spd){if(!FREE.on)return;const now=Date.now(
   if(!m){FREE.offSince=FREE.offSince||now;setData('look',emptyFC);setData('lookev',emptyFC);fStatus(now-FREE.offSince>8000?'지도에 없는 길 — 안내 쉬는 중':'길 찾는 중…');return}
   FREE.offSince=null;FREE.prevSeg=m.k;
   const la=lookAhead(FREE.G,m,LOOK);const det=detectAhead(la.coords,la.stop,la.legSeg.map(k=>FREE.G.segs[k].br));
+  // 정상 판정용: 주자 뒤 60 m를 붙여 평활한 고도(앞만 보면 창 앞머리가 한쪽으로만 평활돼 정상이 30~70 m 일찍 나온다)
+  if(det&&FREE.active){const lb=lookAhead(FREE.G,{k:m.k,dir:-m.dir,q:m.q},60),BK=lb.len;const dB=detectAhead(lb.coords.slice(1).reverse().concat(la.coords),la.stop,null);if(dB){const i0=dB.rs.findIndex(r=>r.s>=BK-1e-6);det.rsB=dB.rs.slice(i0).map(r=>({p:r.p,s:r.s-BK}));det.eB=dB.e.slice(i0)}}
   setData('look',{type:'FeatureCollection',features:[line(la.coords)]});
   if(!det){fStatus('높낮이 읽는 중…');preloadTiles(lon,lat,600);return}
   setData('lookev',{type:'FeatureCollection',features:det.evs.map(ev=>line(det.rs.filter(r=>r.s>=ev.d0&&r.s<=ev.d1).map(r=>r.p),{up:ev.type==='up'}))});
@@ -569,7 +579,7 @@ function freeAnnounce(det,p,acc,t){const near=Math.max(15,FREE.v*4),now=Date.now
   const mark=(ev,kind)=>FREE.ann.push({kind,type:ev.type,a0:ev.a0,t:now});
   // 이미 오르막 위: 정상 판정(앞에 시작점이 15 m 안인 오르막이 더 없고, 시작 뒤 일정 거리를 왔을 때)
   // 오르막 위: 남은 오름은 앞 고도가 더 오르지 않는 곳까지. 앞 30 m 상승이 0.45 m 아래면 정상.
-  if(FREE.active){const e=det.e,rs=det.rs,moved=hav(FREE.active.a0,p);let k=rs.findIndex(r=>r.s>=30);if(k<0)k=e.length-1;const rise=e[k]-e[0];
+  if(FREE.active){const useB=det.eB&&det.eB.length>=4,e=useB?det.eB:det.e,rs=useB?det.rsB:det.rs,moved=hav(FREE.active.a0,p);let k=rs.findIndex(r=>r.s>=30);if(k<0)k=e.length-1;const rise=e[k]-e[0];
     let pk=0;while(pk+1<e.length&&e[pk+1]>=e[pk]-0.05)pk++;FREE.active.rem=rs[pk].s;
     if((rise<0.45&&moved>=Math.min(40,FREE.active.len*0.4))||moved>FREE.active.len+150){play('summit');flog('summit','정상',null,p[1],p[0],acc,t);FREE.active=null}
     else if(S.talk!=='low'&&!FREE.active.remSaid&&FREE.active.rem<=60&&FREE.active.rem>=35&&FREE.active.len>=120&&pk<e.length-2){FREE.active.remSaid=true;play({tts:'정상까지 50미터.'});flog('remain','정상까지 50미터.',null,p[1],p[0],acc,t)}}
@@ -593,7 +603,7 @@ function freeCsv(lr){const fx=lr.fixes;const rows=lr.log.map(e=>{let walked='',r
 loadPacks();loadMusicLib();
 [1,2,5].forEach(v=>{const b=document.createElement('button');b.className='chip'+(v===S.simSpd?' on':'');b.textContent=v+'배';b.onclick=()=>{S.simSpd=v;document.querySelectorAll('#spd .chip').forEach(x=>x.classList.toggle('on',x===b))};$('spd').appendChild(b)});
 $('f-start').onclick=()=>freeStart(false);$('f-sim').onclick=()=>freeStart(true);$('f-stop').onclick=()=>{if(confirm('끝낼까요?'))freeStop()};
-$('f-test').onclick=()=>{unlockAudio();play({tts:preText({type:'up',avg:0.06,len:150,h:9,open:false},200)});play('climb_start')};
+$('f-test').onclick=()=>{resetAudio();unlockAudio();play({tts:preText({type:'up',avg:0.06,len:150,h:9,open:false},200)});play('climb_start')};
 
 </script>
 </body>
