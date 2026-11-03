@@ -438,7 +438,9 @@ async function loadPacks(){try{const r=await fetch('packs/index.json',{cache:'no
   list.forEach(k=>{const o=document.createElement('option');o.value=k.id;o.textContent=k.name;o.dataset.c=JSON.stringify(k.center);sel.appendChild(o)});
   const q=new URLSearchParams(location.search).get('area');if(q&&list.some(k=>k.id===q)){sel.value=q;show('free')}}catch(e){}}
 async function areaData(lat,lon,st){const sel=$('f-pack');
-  if(sel&&!sel.value){const nearP=PACKS.map(k=>({k,d:hav([lon,lat],k.center)})).filter(x=>x.d<1300).sort((a,b)=>a.d-b.d)[0];if(nearP)sel.value=nearP.k.id}
+  // 고른 팩이 없거나 지금 위치가 고른 팩 밖이면, 지금 위치를 담은 가장 가까운 팩으로 바꾼다(링크 하나로 여의도·마포 어디서 시작해도 되게)
+  if(sel){const inP=k=>hav([lon,lat],k.center)<(k.r||1500)-200,cur=PACKS.find(k=>k.id===sel.value),nearP=PACKS.filter(inP).sort((a,b)=>hav([lon,lat],a.center)-hav([lon,lat],b.center))[0];
+    if(nearP&&(!cur||!inP(cur)))sel.value=nearP.id}
   if(sel&&sel.value){st.textContent='미리 받아 둔 지역 지도를 여는 중…';const r=await fetch('packs/'+sel.value+'.json');if(!r.ok)throw new Error('지역 팩 없음');const j=await r.json();
     if(hav([lon,lat],j.center)>j.r-200)st.textContent+=` (지역 팩 가운데에서 ${fmtKm(hav([lon,lat],j.center))} 떨어져 있습니다)`;return {j,center:j.center}}
   const t0=Date.now();let k0=1,n0=3;const tick=setInterval(()=>{st.textContent=`공개 길 지도 서버 ${k0}/${n0}번째 시도 중… ${Math.round((Date.now()-t0)/1000)}초 (서버당 최대 20초)`},1000);
@@ -447,9 +449,9 @@ async function areaData(lat,lon,st){const sel=$('f-pack');
   finally{clearInterval(tick)}}
 const GC=0.0005,gkey=(lon,lat)=>Math.floor(lon/GC)+'_'+Math.floor(lat/GC);
 function buildGraph(j,center){const nodes=new Map(),adj=new Map(),segs=[],grid=new Map();
-  for(const w of j.elements||[]){if(w.type!=='way'||!w.geometry||!w.nodes)continue;const st=w.tags&&w.tags.highway==='steps';
+  for(const w of j.elements||[]){if(w.type!=='way'||!w.geometry||!w.nodes)continue;const tg=w.tags||{},st=tg.highway==='steps',br=(tg.bridge&&tg.bridge!=='no')||(tg.tunnel&&tg.tunnel!=='no');
     for(let i=0;i<w.nodes.length;i++)nodes.set(w.nodes[i],[w.geometry[i].lon,w.geometry[i].lat]);
-    for(let i=0;i+1<w.nodes.length;i++){const a=w.nodes[i],b=w.nodes[i+1];if(a===b)continue;const k=segs.length;segs.push({a,b,st});
+    for(let i=0;i+1<w.nodes.length;i++){const a=w.nodes[i],b=w.nodes[i+1];if(a===b)continue;const k=segs.length;segs.push({a,b,st,br});
       (adj.get(a)||adj.set(a,[]).get(a)).push(k);(adj.get(b)||adj.set(b,[]).get(b)).push(k);
       const pa=nodes.get(a),pb=nodes.get(b);for(let x=Math.floor(Math.min(pa[0],pb[0])/GC);x<=Math.floor(Math.max(pa[0],pb[0])/GC);x++)for(let y=Math.floor(Math.min(pa[1],pb[1])/GC);y<=Math.floor(Math.max(pa[1],pb[1])/GC);y++){const gk=x+'_'+y;(grid.get(gk)||grid.set(gk,[]).get(gk)).push(k)}}}
   return {nodes,adj,segs,grid,center}}
@@ -466,15 +468,15 @@ function matchSeg(G,p,head,acc,prev){const gx=Math.floor(p[0]/GC),gy=Math.floor(
     const sc=pr.d+ang*0.4+conn;if(!best||sc<best.sc)best={k,sc,dir,ang,d:pr.d,q:pr.q,t:pr.t}}
   return best}
 // 앞을 내다본다: 갈 곳이 하나뿐이면 계속, 여럿이면 가장 곧은 길이 확실할 때만 계속.
-function lookAhead(G,m,maxLen,pick){const s=G.segs[m.k];let from=m.dir>0?s.a:s.b,to=m.dir>0?s.b:s.a,seg=m.k;const coords=[m.q];let len=0,stop='len';
+function lookAhead(G,m,maxLen,pick){const s=G.segs[m.k];let from=m.dir>0?s.a:s.b,to=m.dir>0?s.b:s.a,seg=m.k;const coords=[m.q],legSeg=[m.k];let len=0,stop='len';
   let cur=m.q;for(let guard=0;guard<400;guard++){const pt2=G.nodes.get(to);const d=hav(cur,pt2);
-    if(len+d>=maxLen){const f=(maxLen-len)/d;coords.push([cur[0]+(pt2[0]-cur[0])*f,cur[1]+(pt2[1]-cur[1])*f]);len=maxLen;break}
-    coords.push(pt2);len+=d;const inB=brg(G.nodes.get(from),pt2);cur=pt2;
+    if(len+d>=maxLen){const f=(maxLen-len)/d;coords.push([cur[0]+(pt2[0]-cur[0])*f,cur[1]+(pt2[1]-cur[1])*f]);legSeg.push(seg);len=maxLen;break}
+    coords.push(pt2);legSeg.push(seg);len+=d;const inB=brg(G.nodes.get(from),pt2);cur=pt2;
     const cands=(G.adj.get(to)||[]).filter(k=>k!==seg).map(k=>{const s2=G.segs[k],nx=s2.a===to?s2.b:s2.a;return {k,nx,turn:adiff(inB,brg(pt2,G.nodes.get(nx)))}}).sort((a,b)=>a.turn-b.turn);
     if(!cands.length){stop='end';break}
     let c;if(pick){c=pick(cands)}else if(cands.length===1){c=cands[0]}else{if(cands[0].turn>55){stop='turn';break}if(cands[1].turn<=60&&cands[1].turn-cands[0].turn<25){stop='fork';break}c=cands[0]}
     if(!c){stop='fork';break}from=to;to=c.nx;seg=c.k}
-  return {coords,len,stop,lastSeg:seg,lastFrom:from,lastTo:to}}
+  return {coords,legSeg,len,stop,lastSeg:seg,lastFrom:from,lastTo:to}}
 // ---------- 고도: 이미 받은 타일에서 바로 읽기 ----------
 const tileArr=new Map();
 function elevSync(p){const [x,y]=tileXY(p[0],p[1]);const gx=x-0.5,gy=y-0.5,x0=Math.floor(gx),y0=Math.floor(gy),fx=gx-x0,fy=gy-y0;
@@ -483,7 +485,11 @@ function elevSync(p){const [x,y]=tileXY(p[0],p[1]);const gx=x-0.5,gy=y-0.5,x0=Ma
 async function preloadTiles(lon,lat,r){const a=dest([lon,lat],315,r*1.45),b=dest([lon,lat],135,r*1.45);const [x0,y0]=tileXY(a[0],a[1]),[x1,y1]=tileXY(b[0],b[1]);
   const jobs=[];for(let tx=Math.floor(x0/256);tx<=Math.floor(x1/256);tx++)for(let ty=Math.floor(y0/256);ty<=Math.floor(y1/256);ty++)jobs.push(loadTile(tx,ty));await Promise.all(jobs)}
 // ---------- 앞 길의 오르막·내리막 찾기 (10 m 간격) ----------
-function detectAhead(coords,stop){const rs=resampleSimple(coords,10);if(rs.length<4)return null;const raw=rs.map(r=>elevSync(r.p));if(raw.some(v=>!isFinite(v)))return null;
+// 다리·터널 위는 위성 고도가 강물·산 높이라 틀린다 → 양쪽 끝 고도를 직선으로 잇는다
+function detectAhead(coords,stop,brLeg){const rs=resampleSimple(coords,10);if(rs.length<4)return null;const raw=rs.map(r=>elevSync(r.p));if(raw.some(v=>!isFinite(v)))return null;
+  if(brLeg&&brLeg.some(Boolean)){const cum=[0];for(let i=1;i<coords.length;i++)cum.push(cum[i-1]+hav(coords[i-1],coords[i]));let j=1;const fl=rs.map(r=>{while(j<cum.length-1&&cum[j]<r.s)j++;return !!brLeg[j]});
+    let i=0;while(i<fl.length){if(!fl[i]){i++;continue}let k=i;while(k+1<fl.length&&fl[k+1])k++;const a=i>0?raw[i-1]:null,b=k+1<fl.length?raw[k+1]:null;
+      for(let q=i;q<=k;q++){raw[q]=a!=null&&b!=null?a+(b-a)*(q-i+1)/(k-i+2):(a!=null?a:b!=null?b:raw[q])}i=k+1}}
   const e=smooth(smooth(raw,2),2),n=e.length,L=rs[n-1].s;const gr=e.map((_,i)=>{const a=Math.max(0,i-3),b=Math.min(n-1,i+3);return b>a?(e[b]-e[a])/(rs[b].s-rs[a].s):0});
   const evs=[];const scan=(test,type,minH)=>{let i=0;while(i<n){if(!test(gr[i])){i++;continue}let j=i;while(j+1<n&&(test(gr[j+1])||(j+2<n&&test(gr[j+2]))))j++;
       let lo=i,hi=j;if(type==='up'){for(let k=Math.max(0,i-2);k<=Math.min(n-1,i+1);k++)if(e[k]<e[lo])lo=k;for(let k=Math.max(0,j-1);k<=Math.min(n-1,j+2);k++)if(e[k]>e[hi])hi=k}
@@ -499,7 +505,7 @@ function soonText(ev){return ev.type==='up'?('곧 오르막이에요.'+(ev.open?
 // ---------- 시작·멈춤 ----------
 async function freeStart(sim){if(FREE.on)return;unlockAudio();const st=$('f-status');
   const begin=async(lat,lon)=>{st.textContent='근처 길 지도와 높낮이를 받는 중… (10~20초)';
-    try{const [a]=await Promise.all([areaData(lat,lon,st),preloadTiles(lon,lat,AREA_R)]);FREE.G=buildGraph(a.j,a.center);if(a.j.center)await preloadTiles(a.center[0],a.center[1],a.j.r||AREA_R)}
+    try{const [a]=await Promise.all([areaData(lat,lon,st),preloadTiles(lon,lat,AREA_R)]);FREE.G=buildGraph(a.j,a.center);FREE.G.r=a.j.r||AREA_R;if(a.j.center)await preloadTiles(a.center[0],a.center[1],a.j.r||AREA_R)}
     catch(e){st.textContent='길 지도를 못 받았습니다 — '+e.message+'.';return}
     if(!FREE.G.segs.length){st.textContent='이 근처에 걷고 뛸 수 있는 길 정보가 없습니다.';return}
     st.textContent=`길 ${FREE.G.segs.length.toLocaleString()}구간 받음. ${sim?'시뮬레이션 시작':'달리기 시작 — 움직이면 방향을 잡습니다'}`;
@@ -537,12 +543,15 @@ function freeFix(lat,lon,acc,t,gHead,spd){if(!FREE.on)return;const now=Date.now(
   // 속도(최근 12초)
   const old=fx.find(f=>now-f.t<=12000);if(old&&old!==fx[fx.length-1]){const dt=(t-old.t)/1000,dd=hav([old.lon,old.lat],p);const v=dt>0?dd/dt:0;if(v>0.8&&v<7)FREE.v=v}
   // 받아 둔 길 지도 가장자리에 가까워지면 새로 받는다
+  // 지역 팩 가장자리에서 옆 팩 안으로 들어가면 그 팩으로 넘어간다(예: 여의도 ↔ 마포, 마포대교)
+  if(!FREE.reloading&&$('f-pack').value&&hav(p,FREE.G.center)>FREE.G.r-350){const nb=PACKS.filter(k=>k.id!==$('f-pack').value&&hav(p,k.center)<(k.r||1500)-350).sort((a,b)=>hav(p,a.center)-hav(p,b.center))[0];
+    if(nb){FREE.reloading=true;fetch('packs/'+nb.id+'.json').then(r=>r.json()).then(async j=>{await preloadTiles(j.center[0],j.center[1],j.r||AREA_R);FREE.G=buildGraph(j,j.center);FREE.G.r=j.r||AREA_R;FREE.prevSeg=null;$('f-pack').value=nb.id;flog('pack','지역 팩 전환: '+nb.name,null,lat,lon,acc,t)}).catch(()=>{}).finally(()=>{FREE.reloading=false})}}
   if(!FREE.reloading&&!$('f-pack').value&&hav(p,FREE.G.center)>AREA_R-450){FREE.reloading=true;Promise.all([overpass(lat,lon,AREA_R),preloadTiles(lon,lat,AREA_R)]).then(([j])=>{FREE.G=buildGraph(j,p);FREE.prevSeg=null}).catch(()=>{}).finally(()=>{FREE.reloading=false})}
   if(FREE.head==null){fStatus('움직이면 방향을 잡습니다');return}
   const m=matchSeg(FREE.G,p,FREE.head,acc,FREE.prevSeg);
   if(!m){FREE.offSince=FREE.offSince||now;setData('look',emptyFC);setData('lookev',emptyFC);fStatus(now-FREE.offSince>8000?'지도에 없는 길 — 안내 쉬는 중':'길 찾는 중…');return}
   FREE.offSince=null;FREE.prevSeg=m.k;
-  const la=lookAhead(FREE.G,m,LOOK);const det=detectAhead(la.coords,la.stop);
+  const la=lookAhead(FREE.G,m,LOOK);const det=detectAhead(la.coords,la.stop,la.legSeg.map(k=>FREE.G.segs[k].br));
   setData('look',{type:'FeatureCollection',features:[line(la.coords)]});
   if(!det){fStatus('높낮이 읽는 중…');preloadTiles(lon,lat,600);return}
   setData('lookev',{type:'FeatureCollection',features:det.evs.map(ev=>line(det.rs.filter(r=>r.s>=ev.d0&&r.s<=ev.d1).map(r=>r.p),{up:ev.type==='up'}))});
