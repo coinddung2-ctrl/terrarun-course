@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TerraRun 테스트 안내</title>
+<style>
+:root{--bg:#fbfaf7;--ink:#1f1d1a;--mute:#6f6a62;--line:#e4e0d8;--accent:#d9480f;--accent2:#2b8a3e;--card:#fff;--soft:#fff4ec}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:4px 0 6px}
+h2{font-size:19px;margin:28px 0 8px;padding-top:6px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:16px 0 6px}
+.lead{color:var(--mute);margin:0 0 14px}
+.go{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 16px;margin:6px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}
+.tabs button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 14px;font:inherit;font-weight:600;color:var(--mute);cursor:pointer}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.warn{background:var(--soft);border-color:#f3c9ad}
+ol,ul{padding-left:22px;margin:6px 0}
+li{margin:4px 0}
+b.k{background:#f1ede6;border-radius:6px;padding:0 6px;font-weight:700}
+.muted{color:var(--mute);font-size:14px}
+.q{margin:14px 0}
+.q label{display:block;font-weight:600;margin-bottom:6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opts label{font-weight:400;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--card);cursor:pointer;margin:0}
+.opts label:has(input:checked){border-color:var(--accent);color:var(--accent);font-weight:700}
+.opts input{margin-right:4px}
+textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;background:var(--card)}
+textarea{min-height:56px}
+.copy{background:var(--accent2);color:#fff;border:0;border-radius:10px;padding:12px 16px;font:inherit;font-weight:700;cursor:pointer}
+pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px}
+.hide{display:none}
+a{color:var(--accent);font-weight:700}
+.go{color:#fff}
+</style>
+</head>
+<body>
+<main>
+<h1>TerraRun 테스트 안내</h1>
+<p class="lead">달리는 길 앞에 오르막이 다가오면 <b>차량 내비처럼 미리 알려 주는</b> 러닝 오디오 코치 시험판이에요. PC에서 한 번 보고, 폰으로 한 번 실제로 뛰어 주시면 됩니다. 솔직한 답이 가장 큰 도움이에요.</p>
+<a class="go" href="./">테스트 화면 열기 →</a>
+<p class="muted">앱 설치·가입은 없어요. 위치는 내 기기 안에서만 계산하고, 기록도 내 기기에만 남아요.</p>
+
+<div class="tabs" role="tablist">
+  <button data-t="pc" class="on">① PC (윈도우)</button>
+  <button data-t="ios">② 아이폰</button>
+  <button data-t="and">② 안드로이드</button>
+  <button data-t="ans">③ 답 보내기</button>
+</div>
+
+<!-- PC -->
+<section id="t-pc">
+<h2>① PC에서 보기 (5~10분, 크롬·엣지)</h2>
+<div class="card">
+<h3>A. 추천 코스 시뮬레이션</h3>
+<ol>
+<li>스피커나 이어폰 소리를 켜고 <a href="./">테스트 화면</a>을 엽니다.</li>
+<li>위쪽 <b class="k">추천</b> 탭 → 지도를 끌어서 <b>아는 동네</b>로 옮기고 <b class="k">지도 가운데에서</b>를 누릅니다(10~20초).</li>
+<li>코스 3개가 나오면 하나에서 <b class="k">이 코스</b>를 누릅니다.</li>
+<li><b>음악</b>: <b class="k">내 음악 파일</b> → <b class="k">파일 고르기</b>로 PC에 있는 음악 1~3곡을 고르거나, <b class="k">음악 없이</b>를 고릅니다.</li>
+<li><b>시뮬레이션 속도</b> <b class="k">2배</b> → <b class="k">시뮬레이션</b>. 지도에서 주황 점이 코스를 달려요. 오르막 앞에서 <b>"200미터 앞, 오르막이에요"</b> 같은 안내가 나오고, 그동안 음악이 작아져요.</li>
+<li>2~3분 보다가 <b class="k">끝내기</b>.</li>
+</ol>
+</div>
+<div class="card">
+<h3>B. 코스 없이 달리기 시뮬레이션</h3>
+<ol>
+<li>위쪽 <b class="k">자유</b> 탭 → 지도를 아는 동네로 옮기고 <b class="k">지도 가운데에서 시뮬레이션</b>.</li>
+<li>초록 선 = 앞으로 내다본 400 m 길, 보라 = 오르막. 가상 주자가 아무 길로나 달리며 앞 오르막을 미리 말해요.</li>
+</ol>
+<p class="muted">길 지도 서버가 붐비면 "서버 1/3번째 시도 중…"이 뜨고 실패할 수 있어요. 잠시 뒤 다시 누르거나 그대로 알려 주세요(그것도 시험 결과예요).</p>
+</div>
+<div class="card warn">윈도우에 한국어 음성이 없으면 숫자 안내가 안 나오거나 어색하게 읽힐 수 있어요. 그렇게 들리면 "답 보내기"에 적어 주세요.</div>
+</section>
+
+<!-- iOS -->
+<section id="t-ios" class="hide">
+<h2>② 아이폰으로 실제로 뛰기 (15~30분)</h2>
+<div class="card warn"><b>뛰기 전 준비</b>
+<ul>
+<li>링크는 <b>Safari</b>로 엽니다. 카톡에서 누르면 카톡 안에서 열리니 오른쪽 아래 <b class="k">⋯</b> 또는 공유 → <b class="k">Safari로 열기</b>.</li>
+<li><b>무음 모드를 끕니다</b>(옆 스위치). 무음이면 안내 소리가 안 날 수 있어요.</li>
+<li>설정 → 디스플레이 및 밝기 → <b>자동 잠금 → 안 함</b>. 화면이 꺼지면 위치가 멈춰요. <b>끝나고 꼭 되돌리세요.</b></li>
+<li>위치 권한을 물으면 <b>허용</b>.</li>
+</ul></div>
+<div class="card">
+<h3>둘 중 편한 방식으로</h3>
+<ol>
+<li><b>코스 없이(추천)</b>: 출발할 곳에서 <b class="k">자유</b> 탭 → <b class="k">내 위치에서 시작</b>. 10~20초 뒤 "전방 안내를 시작할게요"가 나오면 평소처럼 아무 길이나 뛰세요.</li>
+<li><b>정해진 코스</b>: <b class="k">추천</b> → 시간 고르고 <b class="k">추천 3개 만들기</b> → <b class="k">이 코스</b> → <b class="k">달리기 시작</b>. 그 코스를 따라 뛰어요.</li>
+</ol>
+<ul>
+<li>폰은 손이나 암밴드에, <b>화면을 켠 채로</b> 둡니다.</li>
+<li>음악은 멜론·스포티파이 같은 음악 앱을 <b>먼저</b> 틀어 두세요. 안내 때 음악이 멈추는지, 작아지는지, 그대로 겹치는지 봐 주세요.</li>
+<li>끝나면 <b class="k">끝내기</b> → 아래 <b>③ 답 보내기</b>.</li>
+</ul>
+</div>
+<div class="card warn">차도·횡단보도에서는 안내보다 주변을 먼저 보세요. 이어폰은 한쪽만 쓰거나 오픈형을 권해요.</div>
+</section>
+
+<!-- Android -->
+<section id="t-and" class="hide">
+<h2>② 안드로이드로 실제로 뛰기 (15~30분)</h2>
+<div class="card warn"><b>뛰기 전 준비</b>
+<ul>
+<li>링크는 <b>크롬</b>으로 엽니다. 카톡에서 누르면 오른쪽 위 <b class="k">⋮</b> → <b class="k">다른 브라우저로 열기</b>.</li>
+<li>위치 권한을 물으면 <b>허용</b>(정확한 위치). 폰 위치(GPS)가 켜져 있는지 확인.</li>
+<li>화면은 페이지가 켜 둡니다. 그래도 꺼지면 설정 → 디스플레이 → 화면 자동 꺼짐을 10분으로(끝나고 되돌리기).</li>
+<li>미디어 음량을 올려 둡니다.</li>
+</ul></div>
+<div class="card">
+<h3>둘 중 편한 방식으로</h3>
+<ol>
+<li><b>코스 없이(추천)</b>: 출발할 곳에서 <b class="k">자유</b> 탭 → <b class="k">내 위치에서 시작</b>. 10~20초 뒤 "전방 안내를 시작할게요"가 나오면 평소처럼 아무 길이나 뛰세요.</li>
+<li><b>정해진 코스</b>: <b class="k">추천</b> → 시간 고르고 <b class="k">추천 3개 만들기</b> → <b class="k">이 코스</b> → <b class="k">달리기 시작</b>.</li>
+</ol>
+<ul>
+<li>폰은 손이나 암밴드에, <b>화면을 켠 채로</b> 둡니다. 다른 앱으로 넘어가면 위치가 멈춰요.</li>
+<li>음악은 음악 앱을 <b>먼저</b> 틀어 두세요. 안내 때 음악이 어떻게 되는지 봐 주세요.</li>
+<li>끝나면 <b class="k">끝내기</b> → 아래 <b>③ 답 보내기</b>.</li>
+</ul>
+</div>
+<div class="card warn">차도·횡단보도에서는 안내보다 주변을 먼저 보세요. 이어폰은 한쪽만 쓰거나 오픈형을 권해요.</div>
+</section>
+
+<!-- 답 -->
+<section id="t-ans" class="hide">
+<h2>③ 답 보내기</h2>
+<p class="muted">해 본 것만 답하면 돼요. 다 고르고 맨 아래 <b>답 복사</b> → 카톡에 붙여 보내 주세요. 이 페이지는 답을 어디에도 보내지 않아요.</p>
+<div id="form"></div>
+<button class="copy" id="copy">답 복사</button> <span class="muted" id="msg"></span>
+<pre id="out" class="hide"></pre>
+<div class="card"><b>뛴 기록(선택)</b><br><span class="muted">테스트 화면 <b>내 코스</b> 탭 → 지난 기록에서 <b>안내 기록 CSV</b>·<b>GPX</b>를 받아 보내 주시면 "안내가 몇 m 일찍/늦게 나왔는지"를 잴 수 있어요. 위치 기록이라 <b>원할 때만</b> 보내 주세요. 받은 기록은 분석에만 쓰고 30일 안에 지웁니다.</span></div>
+</section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));['pc','ios','and','ans'].forEach(k=>$('t-'+k).classList.toggle('hide',k!==b.dataset.t));window.scrollTo({top:0,behavior:'smooth'})});
+const Q=[
+ {id:'dev',t:'해 본 기기',o:['윈도우 PC','아이폰','안드로이드'],multi:true},
+ {id:'pc1',t:'[PC] 시뮬레이션을 보고 "이게 뭘 해 주는 건지" 알겠어요?',o:['바로 알겠다','대충 알겠다','잘 모르겠다']},
+ {id:'pc2',t:'[PC] 안내 목소리·문장은?',o:['잘 들리고 이해됨','들리지만 어색함','안 나왔거나 안 들림']},
+ {id:'mode',t:'[폰] 어떻게 뛰었어요?',o:['코스 없이(자유)','정해진 코스','안 뛰었음']},
+ {id:'cnt',t:'[폰] 오르막 안내는 몇 번 나왔고, 그중 실제로 오르막이 온 건 몇 번?',free:true,ph:'예: 4번 나왔고 3번 맞음'},
+ {id:'time',t:'[폰] 오르막 안내가 나온 때는?',o:['너무 일찍','알맞게','너무 늦게','빗나감(오르막 없음)']},
+ {id:'help',t:'[폰] 미리 알려 준 게 뛰는 데 도움이 됐어요?',o:['1 전혀','2','3','4','5 아주']},
+ {id:'again',t:'다음에 뛸 때 또 켜고 뛸 것 같아요?',o:['예','아니오','모르겠다']},
+ {id:'why',t:'그 이유 한 줄',free:true},
+ {id:'music',t:'[폰] 음악을 같이 들었어요? 안내 때 음악은?',o:['안 들음','멈춤','작아짐','그대로 겹침']},
+ {id:'bad',t:'거슬리거나 귀찮은 점',free:true},
+ {id:'batt',t:'[폰] 화면 켜 두기·배터리는 어땠어요? (몇 분 뛰고 몇 % 썼는지)',free:true},
+];
+let st={};try{st=JSON.parse(localStorage.getItem('tr_guide')||'{}')}catch(e){}
+const save=()=>{try{localStorage.setItem('tr_guide',JSON.stringify(st))}catch(e){}};
+const form=$('form');
+Q.forEach(q=>{const d=document.createElement('div');d.className='q';const lab=document.createElement('label');lab.textContent=q.t;d.appendChild(lab);
+  if(q.free){const i=document.createElement(q.id==='bad'?'textarea':'input');if(i.tagName==='INPUT')i.type='text';i.placeholder=q.ph||'';i.value=st[q.id]||'';i.oninput=()=>{st[q.id]=i.value;save()};d.appendChild(i)}
+  else{const box=document.createElement('div');box.className='opts';q.o.forEach(o=>{const l=document.createElement('label');const i=document.createElement('input');i.type=q.multi?'checkbox':'radio';i.name=q.id;i.value=o;
+      const cur=st[q.id];i.checked=q.multi?Array.isArray(cur)&&cur.includes(o):cur===o;
+      i.onchange=()=>{if(q.multi){st[q.id]=[...box.querySelectorAll('input:checked')].map(x=>x.value)}else st[q.id]=o;save()};l.appendChild(i);l.append(o);box.appendChild(l)});d.appendChild(box)}
+  form.appendChild(d)});
+$('copy').onclick=async()=>{const lines=Q.map(q=>{const v=st[q.id];const s=Array.isArray(v)?v.join(', '):(v||'').trim();return s?`- ${q.t.replace(/^\[[^\]]+\] /,'')}: ${s}`:null}).filter(Boolean);
+  const t='TerraRun 테스트 답\n'+(lines.length?lines.join('\n'):'(답 없음)');const o=$('out');o.textContent=t;o.classList.remove('hide');
+  try{await navigator.clipboard.writeText(t);$('msg').textContent='복사했어요. 카톡에 붙여 주세요.'}catch(e){$('msg').textContent='아래 글을 길게 눌러 복사해 주세요.'}};
+</script>
+</body>
+</html>
