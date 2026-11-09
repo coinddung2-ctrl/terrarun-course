@@ -36,6 +36,8 @@ canvas{width:100%;height:120px;display:block}
 .cue{display:flex;justify-content:space-between;font-size:13px;border-bottom:1px dashed var(--line);padding:4px 0}
 .cue.done{color:var(--mute);text-decoration:line-through}
 #runbig{font-size:26px;font-weight:800;margin:4px 0}
+#runbig.flash,#fbig.flash{animation:fl 1.4s ease-out}
+@keyframes fl{0%{background:#d9480f;color:#fff}100%{background:transparent}}
 .warn{color:var(--warn);font-weight:700}
 .hide{display:none!important}
 .maplibregl-ctrl-attrib{font-size:10px}
@@ -124,6 +126,9 @@ canvas{width:100%;height:120px;display:block}
     <div class="row">음악 <select id="c-music" class="chip"><option value="rec">추천 음악</option><option value="mine">내 음악 파일</option><option value="none">음악 없이</option></select>
       <label class="btn sec hide" id="c-mfile-l">파일 고르기<input type="file" id="c-mfile" accept="audio/*" multiple class="hide"></label></div>
     <div class="muted" id="c-mlist"></div>
+    <div class="row">알림 <select id="c-alert" class="chip"><option value="sound">소리</option><option value="both">소리+진동</option><option value="vib">진동만(소리 없음)</option></select>
+      <a class="muted" href="haptic-test.html">진동 패턴 익히기·맞히기 시험 →</a></div>
+    <div class="muted" id="c-alert-note"></div>
     <div class="row">시뮬레이션 속도 <span id="spd"></span></div>
     <div id="c-cues"></div>
     <div class="row">
@@ -156,7 +161,7 @@ canvas{width:100%;height:120px;display:block}
 <script>
 "use strict";
 // ---------- 상태 ----------
-const S={simSpd:2,mode:'recommend',minutes:30,paceSec:390,talk:'mid',here:null,course:null,draw:[],drawRoute:null,recs:[],prevMode:'recommend'};
+const S={simSpd:2,mode:'recommend',minutes:30,paceSec:390,talk:'mid',alert:'sound',here:null,course:null,draw:[],drawRoute:null,recs:[],prevMode:'recommend'};
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const $=id=>document.getElementById(id);
 const fmtMin=s=>{s=Math.round(s);return `${Math.floor(s/60)}분 ${String(s%60).padStart(2,'0')}초`};
@@ -231,7 +236,15 @@ function planCues(c){const v=1000/S.paceSec,lead=Math.max(15,v*4),cues=[];const 
 const CLIPS=['intro0','intro1','intro2','intro3','intro4','intro5','climb_start','summit','flat_resume','false_summit_bell','done','off_route','back_on'];
 const audio={};CLIPS.forEach(k=>{const a=new Audio(`clips/${k}.mp3`);a.preload='auto';audio[k]=a});
 const aq=[];let playing=false,aGen=0;   // aGen: 초기화 전에 걸어 둔 끝 처리가 새 안내를 풀지 않게
-function play(k){aq.push(k);pump()}
+// ---------- 진동·화면 알림(11-09 촉각 모드 시험, 설계 리서치/앱설계/10_) ----------
+// · = 짧게 120 ms, ─ = 길게 450 ms, 사이 180 ms. 뛰며 맞히기 5종: 예고 · ─ / 오르막 시작 · · · / 정상 ─ / 평지 · · / 이탈 ─ ─ ─
+const HS=120,HL=450,HG=180;
+const HAP={pre:[HS,HG,HL],climb_start:[HS,HG,HS,HG,HS],summit:[HL],flat_resume:[HS,HG,HS],false_summit_bell:[HS,HG,HS],off_route:[HL,HG,HL,HG,HL],back_on:[HS],done:[HL,HG,HL]};
+for(let i=0;i<=5;i++)HAP['intro'+i]=[HL,HG,HL];
+const canVib=()=>'vibrate' in navigator;
+function buzz(k){if(S.alert==='sound'||!k||!HAP[k])return;try{if(canVib())navigator.vibrate(HAP[k])}catch(e){}
+  ['runbig','fbig'].forEach(id=>{const el=$(id);if(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}})}
+function play(k){buzz(typeof k==='string'?k:(k&&k.hap));if(S.alert==='vib')return;aq.push(k);pump()}
 function pump(){if(playing||!aq.length){if(!playing&&!aq.length)musicDuck(false);return}const k=aq.shift(),g=aGen;musicDuck(true);
   if(typeof k==='object'&&k.tts){playing=true;let done=false;const fin=()=>{if(done||g!==aGen)return;done=true;playing=false;setTimeout(pump,300)};speak(k.tts).then(fin);return}
   const a=audio[k];if(!a)return pump();playing=true;let done=false,tm=null;const fin=gap=>{if(done||g!==aGen)return;done=true;clearTimeout(tm);a.onended=a.onerror=null;playing=false;setTimeout(pump,gap)};
@@ -356,6 +369,9 @@ function renderCues(el,c,fired){el.innerHTML=c.cues.map(q=>`<div class="cue${fir
 document.querySelectorAll('[data-talk]').forEach(b=>b.onclick=()=>{S.talk=b.dataset.talk;document.querySelectorAll('[data-talk]').forEach(x=>x.classList.toggle('on',x===b));if(S.course){S.course.cues=planCues(S.course);renderCues($('c-cues'),S.course,new Set());setData('cues',{type:'FeatureCollection',features:S.course.cues.map(q=>pt(posAt(S.course,q.at)))})}});
 $('c-back').onclick=()=>show(S.prevMode);
 $('c-test').onclick=()=>{resetAudio();unlockAudio();play('climb_start')};
+S.alert=store.get('tr_alert','sound');$('c-alert').value=S.alert;
+function alertNote(){$('c-alert-note').textContent=S.alert==='sound'?'':canVib()?'진동은 화면이 켜져 있을 때 가장 확실합니다. 패턴: 예고 · ─ / 오르막 시작 · · · / 정상 ─ / 평지 · · / 이탈 ─ ─ ─. 알림 때 위 글자 칸이 주황으로 깜빡입니다.':'이 기기·브라우저는 진동을 지원하지 않습니다(아이폰 사파리 등). 화면 깜빡임만 됩니다.'}
+$('c-alert').onchange=e=>{S.alert=e.target.value;store.set('tr_alert',S.alert);alertNote()};alertNote();
 $('c-save').onclick=()=>{const c=S.course;const list=store.get('tr_courses',[]);const name=prompt('코스 이름',c.name||'내 코스');if(name===null)return;c.name=name;list.unshift({name,coords:c.coords,source:c.source,created:Date.now()});store.set('tr_courses',list.slice(0,30));$('c-title').textContent=name;alert('이 폰에 저장했습니다(내 코스 탭).')};
 $('c-gpx').onclick=()=>{const c=S.course;download((c.name||'course')+'.gpx',gpxOf(c.name||'TerraRun 코스',c.rs.map((r,i)=>({lat:r.p[1],lon:r.p[0],ele:c.e[i]}))),'application/gpx+xml')};
 function gpxOf(name,pts){const esc=s=>String(s).replace(/[<&>]/g,m=>({'<':'&lt;','&':'&amp;','>':'&gt;'}[m]));return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="TerraRun 코스 도구" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>\n${pts.map(p=>`<trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${p.ele!=null?`<ele>${p.ele.toFixed(1)}</ele>`:''}${p.t?`<time>${new Date(p.t).toISOString()}</time>`:''}</trkpt>`).join('\n')}\n</trkseg></trk></gpx>`}
@@ -414,7 +430,7 @@ function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fix
   drawProfile($('rprof'),c,RUN.s);RUN.trail.push([lon,lat]);setData('trail',{type:'FeatureCollection',features:RUN.trail.length>1?[line(RUN.trail)]:[]});
   map.easeTo({center:[lon,lat],zoom:Math.max(map.getZoom(),16),duration:RUN.sim?900:500})}
 function rec(id,lat,lon,acc,t){return {id,label:id,at:0,s:RUN.s,t,lat,lon,acc}}
-function fire(q){RUN.fired.add(q.id);const qq=RUN.c.cues.find(x=>x.id===q.id);if(qq)play(qq.tts?{tts:qq.tts}:qq.clip)}
+function fire(q){RUN.fired.add(q.id);const qq=RUN.c.cues.find(x=>x.id===q.id);if(qq)play(qq.tts?{tts:qq.tts,hap:/^h\d+p$/.test(q.id)?'pre':null}:qq.clip)}
 function status(h){$('runbig').innerHTML=h}
 function stopRun(){if(!RUN.on)return;RUN.on=false;stopMusic();setData('trail',emptyFC);if(RUN.watch!=null)navigator.geolocation.clearWatch(RUN.watch);if(RUN.timer)clearInterval(RUN.timer);releaseWake();
   if(!RUN.sim){store.set('tr_lastrun',{name:RUN.c.name||'코스',start:RUN.start,fixes:RUN.fixes.slice(-20000),cues:RUN.cues.filter(q=>q.id!=='off_route'&&q.id!=='back_on'&&q.at!=null)})}
@@ -587,8 +603,8 @@ function freeAnnounce(det,p,acc,t){const near=Math.max(15,FREE.v*4),now=Date.now
     if(ev.type==='up'&&ev.d0<=near&&ev.d1>near){if(!FREE.active&&!seen(ev,'start')){mark(ev,'start');if(!seen(ev,'pre')&&!seen(ev,'soon'))mark(ev,'pre');FREE.active={a0:ev.a0,len:ev.len,rem:ev.d1,remSaid:false};play('climb_start');flog('start','오르막 시작(클립)',ev,p[1],p[0],acc,t)}continue}
     if(ev.d0<=near)continue;
     const preLo=ev.type==='up'?90:60,preHi=ev.type==='up'?220:160;
-    if(ev.d0>=preLo&&ev.d0<=preHi&&!seen(ev,'pre')){mark(ev,'pre');const tx=preText(ev,ev.d0);play({tts:tx});flog('pre',tx,ev,p[1],p[0],acc,t)}
-    else if(ev.d0<preLo&&ev.d0>30&&!seen(ev,'pre')&&!seen(ev,'soon')){mark(ev,'soon');const tx=soonText(ev);play({tts:tx});flog('soon',tx,ev,p[1],p[0],acc,t)}}}
+    if(ev.d0>=preLo&&ev.d0<=preHi&&!seen(ev,'pre')){mark(ev,'pre');const tx=preText(ev,ev.d0);play({tts:tx,hap:ev.type==='up'?'pre':null});flog('pre',tx,ev,p[1],p[0],acc,t)}
+    else if(ev.d0<preLo&&ev.d0>30&&!seen(ev,'pre')&&!seen(ev,'soon')){mark(ev,'soon');const tx=soonText(ev);play({tts:tx,hap:ev.type==='up'?'pre':null});flog('soon',tx,ev,p[1],p[0],acc,t)}}}
 function drawLook(cv,det){const dpr=window.devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,w,h);
   const lo=Math.min(...det.e)-3,hi=Math.max(...det.e,lo+12)+2,X=s=>8+(w-16)*s/LOOK,Y=v=>h-18-(h-28)*(v-lo)/(hi-lo||1);
   det.evs.forEach(k=>{g.fillStyle=k.type==='up'?'rgba(134,46,156,.15)':'rgba(43,138,62,.13)';g.fillRect(X(k.d0),4,X(k.d1)-X(k.d0),h-22)});

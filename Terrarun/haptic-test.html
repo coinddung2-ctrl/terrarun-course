@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TerraRun 진동 패턴 시험</title>
+<style>
+:root{--bg:#fbfaf7;--ink:#1f1d1a;--mute:#6f6a62;--line:#e4e0d8;--accent:#d9480f;--accent2:#2b8a3e;--card:#fff;--warn:#c92a2a}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+main{max-width:520px;margin:0 auto;padding:18px 16px calc(28px + env(safe-area-inset-bottom))}
+h1{font-size:21px;margin:4px 0 6px}
+h2{font-size:17px;margin:20px 0 8px}
+.muted{color:var(--mute);font-size:14px}
+.warn{color:var(--warn);font-weight:700}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.btn{border:0;background:var(--accent);color:#fff;border-radius:12px;padding:13px 16px;font:inherit;font-weight:700}
+.btn.sec{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.btn.green{background:var(--accent2)}
+select{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 12px;font:inherit}
+.pat{display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed var(--line);padding:8px 0}
+.pat:last-child{border-bottom:0}
+.pat b{font-size:16px}
+.dots{font-size:22px;letter-spacing:4px;color:var(--accent);font-weight:800}
+#big{font-size:30px;font-weight:800;text-align:center;margin:14px 0 6px;min-height:46px}
+.ans{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.ans button{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:18px 8px;font:inherit;font-weight:700;font-size:17px}
+.ans button span{display:block;color:var(--accent);font-size:20px;letter-spacing:3px}
+.ans button:disabled{opacity:.4}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{border-bottom:1px solid var(--line);padding:5px 4px;text-align:left}
+textarea{width:100%;height:120px;font:12px/1.4 ui-monospace,monospace;border:1px solid var(--line);border-radius:8px;padding:8px}
+.hide{display:none!important}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <a href="index.html" class="muted">← 코스 도구로</a>
+  <h1>진동 패턴 익히기 · 맞히기 시험</h1>
+  <div class="muted">소리 대신 진동으로 언덕 안내를 받을 수 있는지 재는 시험입니다(T-H1). 서서 → 걸으며 → 뛰며 순서로 해 보세요. <b>뛰며 정답률 80% 이상</b>이면 통과입니다. 기록은 이 폰 안에만 남습니다.</div>
+  <div id="novib" class="card warn hide">이 기기·브라우저는 진동을 지원하지 않습니다(아이폰 사파리 등). 안드로이드 크롬에서 열어 주세요.</div>
+
+  <h2>1. 패턴 익히기</h2>
+  <div class="card" id="pats"></div>
+
+  <h2>2. 맞히기 시험</h2>
+  <div class="card">
+    <div class="row">자세 <select id="pose"><option>서서</option><option>걸으며</option><option>뛰며</option></select></div>
+    <div class="row">폰 위치 <select id="spot"><option>손</option><option>팔 밴드</option><option>주머니</option><option>허리 벨트</option></select></div>
+    <div class="row">문항 <select id="nq"><option value="10">10개(연습)</option><option value="20" selected>20개(본시험)</option></select></div>
+    <div class="muted">시작을 누르면 2~5초 뒤 진동이 한 번 옵니다. 느낀 패턴을 아래 버튼에서 고르세요. 못 느꼈으면 「못 느낌」. 주머니·밴드면 진동이 온 뒤 꺼내서 눌러도 됩니다.</div>
+    <div class="row"><button class="btn green" id="start">시작</button><button class="btn sec hide" id="stop">그만</button></div>
+    <div id="big">—</div>
+    <div class="muted" id="prog" style="text-align:center"></div>
+    <div class="ans" id="ans"></div>
+  </div>
+
+  <h2>3. 결과</h2>
+  <div id="res" class="muted">아직 없습니다.</div>
+  <div class="row"><button class="btn sec" id="copy">결과 전체 복사(CSV)</button><button class="btn sec" id="clear">이 폰 기록 지우기</button></div>
+  <textarea id="csv" class="hide" readonly></textarea>
+</main>
+<script>
+// 코스 도구(index.html)의 HAP과 같은 값이어야 한다. · = 120 ms, ─ = 450 ms, 사이 180 ms
+const HS=120,HL=450,HG=180;
+const P=[
+  {k:'pre',name:'오르막 예고',dots:'· ─',v:[HS,HG,HL]},
+  {k:'climb_start',name:'오르막 시작',dots:'· · ·',v:[HS,HG,HS,HG,HS]},
+  {k:'summit',name:'정상',dots:'─',v:[HL]},
+  {k:'flat',name:'평지 복귀',dots:'· ·',v:[HS,HG,HS]},
+  {k:'off_route',name:'코스 이탈',dots:'─ ─ ─',v:[HL,HG,HL,HG,HL]},
+];
+const $=id=>document.getElementById(id);
+const canVib='vibrate' in navigator;if(!canVib)$('novib').classList.remove('hide');
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const vib=v=>{try{canVib&&navigator.vibrate(v)}catch(e){}};
+$('pats').innerHTML=P.map((p,i)=>`<div class="pat"><div><b>${p.name}</b><div class="dots">${p.dots}</div></div><button class="btn sec" data-i="${i}">느껴 보기</button></div>`).join('');
+document.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>vib(P[+b.dataset.i].v));
+$('ans').innerHTML=P.map((p,i)=>`<button data-a="${i}" disabled>${p.name}<span>${p.dots}</span></button>`).join('')+`<button data-a="-1" disabled>못 느낌<span>?</span></button>`;
+
+let T=null;
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function setAns(on){document.querySelectorAll('[data-a]').forEach(b=>b.disabled=!on)}
+function next(){if(!T)return;if(T.i>=T.q.length)return finish();setAns(false);$('big').textContent='기다리세요…';$('prog').textContent=`${T.i+1} / ${T.q.length}`;
+  const wait=2000+Math.random()*3000;T.tm=setTimeout(()=>{if(!T)return;vib(P[T.q[T.i]].v);T.t0=Date.now();$('big').textContent='무슨 패턴이었나요?';setAns(true)},wait)}
+document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{if(!T||T.t0==null)return;const a=+b.dataset.a,truth=T.q[T.i];
+  T.log.push({truth,a,ok:a===truth,ms:Date.now()-T.t0});T.t0=null;T.i++;setAns(false);$('big').textContent=a===truth?'○':'×';setTimeout(next,700)});
+$('start').onclick=()=>{if(T)return;const n=+$('nq').value;const q=[];while(q.length<n)q.push(...P.map((_,i)=>i));
+  T={q:shuffle(q.slice(0,n)),i:0,log:[],t0:null,tm:null,pose:$('pose').value,spot:$('spot').value,start:new Date().toISOString()};
+  $('start').classList.add('hide');$('stop').classList.remove('hide');next()};
+$('stop').onclick=()=>{if(!T)return;clearTimeout(T.tm);finish()};
+function finish(){const t=T;T=null;clearTimeout(t.tm);setAns(false);$('start').classList.remove('hide');$('stop').classList.add('hide');$('prog').textContent='';
+  if(!t.log.length){$('big').textContent='—';return}
+  const ok=t.log.filter(x=>x.ok).length,rate=Math.round(100*ok/t.log.length);
+  $('big').textContent=`정답 ${ok}/${t.log.length} (${rate}%)`;
+  const all=store.get('tr_haptic',[]);all.push({start:t.start,pose:t.pose,spot:t.spot,n:t.log.length,ok,log:t.log,ua:navigator.userAgent.slice(0,80)});store.set('tr_haptic',all);render()}
+function render(){const all=store.get('tr_haptic',[]);if(!all.length){$('res').textContent='아직 없습니다.';return}
+  const rows=all.map(r=>{const rate=Math.round(100*r.ok/r.n);const pass=r.pose==='뛰며'&&r.n>=20?(rate>=80?' <b style="color:#2b8a3e">통과</b>':' <b class="warn">미달</b>'):'';
+    return `<tr><td>${new Date(r.start).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${r.pose}</td><td>${r.spot}</td><td>${r.ok}/${r.n}</td><td>${rate}%${pass}</td></tr>`}).join('');
+  // 헷갈린 패턴(전체 누적)
+  const conf={};all.forEach(r=>r.log.forEach(x=>{if(!x.ok){const key=`${P[x.truth].name} → ${x.a<0?'못 느낌':P[x.a].name}`;conf[key]=(conf[key]||0)+1}}));
+  const ct=Object.entries(conf).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k} ${v}회`).join(' · ')||'없음';
+  $('res').innerHTML=`<table><tr><th>시각</th><th>자세</th><th>위치</th><th>정답</th><th>비율</th></tr>${rows}</table><div class="muted" style="margin-top:6px">자주 헷갈린 것: ${ct}</div>`}
+$('copy').onclick=async()=>{const all=store.get('tr_haptic',[]);const lines=['start,pose,spot,q,truth,answer,ok,ms'];
+  all.forEach(r=>r.log.forEach((x,i)=>lines.push([r.start,r.pose,r.spot,i+1,P[x.truth].k,x.a<0?'none':P[x.a].k,x.ok?1:0,x.ms].join(','))));
+  const txt=lines.join('\n');$('csv').value=txt;$('csv').classList.remove('hide');try{await navigator.clipboard.writeText(txt);$('copy').textContent='복사됨 — 카톡 등에 붙여 넣기'}catch(e){$('csv').select()}};
+$('clear').onclick=()=>{if(confirm('이 폰에 남은 시험 기록을 모두 지울까요?')){store.set('tr_haptic',[]);render()}};
+render();
+</script>
+</body>
+</html>
