@@ -123,6 +123,10 @@ canvas{width:100%;height:120px;display:block}
       <button class="chip" data-talk="low">적게(언덕당 2)</button>
       <button class="chip on" data-talk="mid">보통(언덕당 3)</button>
     </div>
+    <div class="row">방향 안내
+      <button class="chip on" data-turns="on">켜기(꺾이는 곳·출발 방향)</button>
+      <button class="chip" data-turns="off">끄기</button>
+    </div>
     <div class="row">음악 <select id="c-music" class="chip"><option value="rec">추천 음악</option><option value="mine">내 음악 파일</option><option value="none">음악 없이</option></select>
       <label class="btn sec hide" id="c-mfile-l">파일 고르기<input type="file" id="c-mfile" accept="audio/*" multiple class="hide"></label></div>
     <div class="muted" id="c-mlist"></div>
@@ -161,7 +165,7 @@ canvas{width:100%;height:120px;display:block}
 <script>
 "use strict";
 // ---------- 상태 ----------
-const S={simSpd:2,mode:'recommend',minutes:30,paceSec:390,talk:'mid',alert:'sound',here:null,course:null,draw:[],drawRoute:null,recs:[],prevMode:'recommend'};
+const S={simSpd:2,mode:'recommend',minutes:30,paceSec:390,talk:'mid',alert:'sound',turns:true,here:null,course:null,draw:[],drawRoute:null,recs:[],prevMode:'recommend'};
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const $=id=>document.getElementById(id);
 const fmtMin=s=>{s=Math.round(s);return `${Math.floor(s/60)}분 ${String(s%60).padStart(2,'0')}초`};
@@ -220,6 +224,20 @@ async function buildCourse(coords,name,source){
   return {name,source,coords,rs,e,g,L,climbs:merged,descents,gain:gainT,created:Date.now()}}
 function minetti(i){i=Math.max(-0.10,Math.min(0.30,i));return 155.4*i**5-30.4*i**4-43.3*i**3+46.3*i**2+19.5*i+3.6}
 function estTime(c){let t=0;for(let k=1;k<c.e.length;k++)t+=STEP*S.paceSec/1000*minetti(c.g[k])/3.6;return t}
+// ---------- 방향(시계 방향 말, 11-09) ----------
+// 오른쪽으로 꺾이면 +, 왼쪽이면 −(도). 12시 = 직진, 3시 = 오른쪽, 9시 = 왼쪽, 6시 = 뒤
+const sdiff=(a,b)=>((b-a+540)%360)-180;
+function clockOf(d){let h=Math.sign(d)*Math.round(Math.abs(d)/30);if(h<=0)h+=12;return h}
+function sideWord(d){const a=Math.abs(d);if(a<20)return '직진';if(a>=150)return '뒤쪽';return (a<55?'살짝 ':'')+(d>0?'오른쪽':'왼쪽')}
+const DIR8=['북','북동','동','남동','남','남서','서','북서'];const absWord=b=>DIR8[Math.round(b/45)%8]+'쪽';
+function turnText(d,dist){const h=clockOf(d);return Math.abs(d)>=150?`${r10(dist)}미터 앞에서 되돌아가요. 6시 방향이에요.`:`${r10(dist)}미터 앞, ${h}시 방향 ${sideWord(d)}이에요.`}
+// 경로가 짧은 거리 안에서 40도 넘게 꺾이는 곳(앞뒤 20 m 방위 비교, 25 m 안 후보는 하나로, 30 m 안 연속은 합침)
+function findTurns(coords){const rs=resampleSimple(coords,5),n=rs.length,W=4,raw=[];if(n<2*W+2)return [];
+  let cl=[];const flush=()=>{if(!cl.length)return;const b=cl.reduce((x,y)=>Math.abs(y.d)>Math.abs(x.d)?y:x),i=b.i,j0=Math.max(0,i-6),j1=Math.min(n-1,i+6);
+    raw.push({s:rs[i].s,p:rs[i].p,d:sdiff(brg(rs[j0].p,rs[i].p),brg(rs[i].p,rs[j1].p))});cl=[]};
+  for(let i=W;i<n-W;i++){const d=sdiff(brg(rs[i-W].p,rs[i].p),brg(rs[i].p,rs[i+W].p));if(Math.abs(d)>=40){if(cl.length&&i-cl[cl.length-1].i>5)flush();cl.push({i,d})}}flush();
+  const out=[];for(const t of raw){const q=out[out.length-1];if(q&&t.s-q.s<30){q.d=Math.max(-180,Math.min(180,q.d+t.d))}else out.push({...t})}
+  const L=rs[n-1].s;return out.filter(t=>Math.abs(t.d)>=40&&t.s>=20&&t.s<=L-20)}
 function planCues(c){const v=1000/S.paceSec,lead=Math.max(15,v*4),cues=[];const n=c.climbs.length;
   cues.push({id:'intro',at:0,clip:'intro'+Math.min(n,5),label:n?`시작 안내 · 오르막 ${n}개`:'시작 안내 · 평지'});
   // 내비식 예고: 오르막 시작 200 m 앞(앞 오르막 정상과 겹치면 그 뒤 30 m에서, 남은 거리를 그대로 말함)
@@ -229,6 +247,7 @@ function planCues(c){const v=1000/S.paceSec,lead=Math.max(15,v*4),cues=[];const 
     cues.push({id:`h${k}t`,at:h.s1,clip:'summit',label:`오르막 ${k+1} 정상`});
     const f=h.s1+40,nx=c.climbs[k+1],nxPre=nx?Math.max(nx.s0-200,h.s1+30):1e9;if(f<c.L-40&&(!nx||(f<nx.s0-lead-30&&f<nxPre-40)))cues.push({id:`h${k}f`,at:f,clip:S.talk==='low'?'false_summit_bell':'flat_resume',label:S.talk==='low'?'평지 복귀(종)':'평지 복귀'})});
   if(S.talk!=='low')(c.descents||[]).forEach((d,k)=>{const at=Math.max(25,d.s0-100);if(c.climbs.some(h=>at>h.s0-30&&at<h.s1+30))return;const tx=preText({type:'down'},d.s0-at);cues.push({id:`d${k}p`,at,tts:tx,label:`내리막 ${k+1} 예고: "${tx}"`})});
+  if(S.turns){const lead=Math.max(30,v*10);findTurns(c.coords).forEach((t,k)=>{const at=Math.max(5,t.s-lead),tx=turnText(t.d,t.s-at);cues.push({id:`t${k}`,at,tts:tx,label:`방향 ${k+1}: "${tx}"`})})}
   cues.push({id:'done',at:Math.max(0,c.L-20),clip:'done',label:'끝'});
   return cues.sort((a,b)=>a.at-b.at)}
 
@@ -284,6 +303,12 @@ map.on('load',()=>{
   map.addSource('cands',{type:'geojson',data:emptyFC});map.addLayer({id:'cands',type:'line',source:'cands',paint:{'line-color':['get','color'],'line-width':['case',['get','sel'],6,3],'line-opacity':['case',['get','sel'],0.95,0.55]},layout:{'line-cap':'round','line-join':'round'}});
   map.addSource('route',{type:'geojson',data:emptyFC});map.addLayer({id:'route',type:'line',source:'route',paint:{'line-color':'#d9480f','line-width':5},layout:{'line-cap':'round','line-join':'round'}});
   map.addSource('climbs',{type:'geojson',data:emptyFC});map.addLayer({id:'climbs',type:'line',source:'climbs',paint:{'line-color':'#862e9c','line-width':8,'line-opacity':0.85},layout:{'line-cap':'round'}});
+  // 진행 방향 화살표(선을 따라 반복)와 출발·도착 표시(11-09 사용자 요청: 어디서 시작해 어느 쪽으로 가는지)
+  map.addImage('arr',mkArrow(),{pixelRatio:2});map.addImage('pin-start',mkPin('출발','#2b8a3e'),{pixelRatio:2});map.addImage('pin-end',mkPin('도착','#1f1d1a'),{pixelRatio:2});map.addImage('pin-loop',mkPin('출발·도착','#2b8a3e'),{pixelRatio:2});
+  const arrLayout={'symbol-placement':'line','symbol-spacing':55,'icon-image':'arr','icon-size':1,'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true};
+  map.addLayer({id:'route-arr',type:'symbol',source:'route',layout:arrLayout});
+  map.addLayer({id:'cands-arr',type:'symbol',source:'cands',filter:['==',['get','sel'],true],layout:arrLayout});
+  map.addSource('ends',{type:'geojson',data:emptyFC});map.addLayer({id:'ends',type:'symbol',source:'ends',layout:{'icon-image':['get','pin'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true}});
   map.addSource('trail',{type:'geojson',data:emptyFC});map.addLayer({id:'trail',type:'line',source:'trail',paint:{'line-color':'#1f1d1a','line-width':4,'line-opacity':0.55,'line-dasharray':[1,1.5]},layout:{'line-cap':'round'}});
   map.addSource('look',{type:'geojson',data:emptyFC});map.addLayer({id:'look',type:'line',source:'look',paint:{'line-color':'#2b8a3e','line-width':6,'line-opacity':0.75},layout:{'line-cap':'round','line-join':'round'}});
   map.addSource('lookev',{type:'geojson',data:emptyFC});map.addLayer({id:'lookev',type:'line',source:'lookev',paint:{'line-color':['case',['get','up'],'#862e9c','#94d82d'],'line-width':9,'line-opacity':0.9},layout:{'line-cap':'round'}});
@@ -292,7 +317,19 @@ map.on('load',()=>{
   map.addSource('me',{type:'geojson',data:emptyFC});map.addLayer({id:'me-acc',type:'circle',source:'me',paint:{'circle-radius':['get','r'],'circle-color':'#d9480f','circle-opacity':0.12}});map.addLayer({id:'me',type:'circle',source:'me',paint:{'circle-radius':7,'circle-color':'#d9480f','circle-stroke-color':'#fff','circle-stroke-width':3}});
   locate(false);
 });
-const setData=(id,d)=>{const s=map.getSource(id);if(s)s.setData(d)};
+const LAST={};
+const setData=(id,d)=>{const s=map.getSource(id);if(s)s.setData(d);if(id==='route'||id==='cands'){LAST[id]=d;updEnds()}};
+// 지금 보이는 경로(코스·그린 길, 없으면 고른 추천 후보)의 출발·도착 표시. 순환이면 한 표시로
+function updEnds(){const r=LAST.route&&LAST.route.features&&LAST.route.features[0];const f=r||(LAST.cands&&LAST.cands.features&&LAST.cands.features.find(x=>x.properties.sel));
+  const s=map.getSource('ends');if(!s)return;if(!f||f.geometry.coordinates.length<2){s.setData(emptyFC);return}const c=f.geometry.coordinates,a=c[0],b=c[c.length-1];
+  s.setData({type:'FeatureCollection',features:hav(a,b)<30?[pt(a,{pin:'pin-loop'})]:[pt(b,{pin:'pin-end'}),pt(a,{pin:'pin-start'})]})}
+function mkArrow(){const W=60,H=44,cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d');
+  g.beginPath();g.moveTo(8,5);g.lineTo(52,22);g.lineTo(8,39);g.lineTo(19,22);g.closePath();g.lineJoin='round';g.strokeStyle='#ffffff';g.lineWidth=7;g.stroke();g.fillStyle='#1f1d1a';g.fill();
+  return g.getImageData(0,0,W,H)}
+function mkPin(txt,col){const cv=document.createElement('canvas'),g=cv.getContext('2d');g.font='bold 26px -apple-system,"Apple SD Gothic Neo",sans-serif';const tw=Math.ceil(g.measureText(txt).width),W=tw+28,H=58;cv.width=W;cv.height=H;
+  g.font='bold 26px -apple-system,"Apple SD Gothic Neo",sans-serif';g.fillStyle=col;g.strokeStyle='#fff';g.lineWidth=4;const r=14;
+  g.beginPath();g.moveTo(r,2);g.lineTo(W-r,2);g.quadraticCurveTo(W-2,2,W-2,r);g.lineTo(W-2,40-r);g.quadraticCurveTo(W-2,40,W-r,40);g.lineTo(W/2+8,40);g.lineTo(W/2,54);g.lineTo(W/2-8,40);g.lineTo(r,40);g.quadraticCurveTo(2,40,2,40-r);g.lineTo(2,r);g.quadraticCurveTo(2,2,r,2);g.closePath();g.stroke();g.fill();
+  g.fillStyle='#fff';g.textBaseline='middle';g.fillText(txt,14,22);return g.getImageData(0,0,W,H)}
 const line=(coords,props={})=>({type:'Feature',properties:props,geometry:{type:'LineString',coordinates:coords}});
 const pt=(p,props={})=>({type:'Feature',properties:props,geometry:{type:'Point',coordinates:p}});
 function showMe(p,acc){const mpp=156543.03*Math.cos(rad(p[1]))/2**map.getZoom();setData('me',{type:'FeatureCollection',features:[pt(p,{r:Math.max(7,(acc||10)/mpp)})]})}
@@ -367,6 +404,8 @@ function openCourse(c){S.course=c;c.cues=planCues(c);show('course');$('c-title')
 function posAt(c,s){const i=Math.min(c.rs.length-1,Math.max(0,Math.round(s/STEP)));return c.rs[i].p}
 function renderCues(el,c,fired){el.innerHTML=c.cues.map(q=>`<div class="cue${fired.has(q.id)?' done':''}"><span>${q.label}</span><span>${fmtKm(q.at)}</span></div>`).join('')}
 document.querySelectorAll('[data-talk]').forEach(b=>b.onclick=()=>{S.talk=b.dataset.talk;document.querySelectorAll('[data-talk]').forEach(x=>x.classList.toggle('on',x===b));if(S.course){S.course.cues=planCues(S.course);renderCues($('c-cues'),S.course,new Set());setData('cues',{type:'FeatureCollection',features:S.course.cues.map(q=>pt(posAt(S.course,q.at)))})}});
+S.turns=store.get('tr_turns',true);document.querySelectorAll('[data-turns]').forEach(x=>x.classList.toggle('on',(x.dataset.turns==='on')===S.turns));
+document.querySelectorAll('[data-turns]').forEach(b=>b.onclick=()=>{S.turns=b.dataset.turns==='on';store.set('tr_turns',S.turns);document.querySelectorAll('[data-turns]').forEach(x=>x.classList.toggle('on',x===b));if(S.course){S.course.cues=planCues(S.course);renderCues($('c-cues'),S.course,new Set());setData('cues',{type:'FeatureCollection',features:S.course.cues.map(q=>pt(posAt(S.course,q.at)))})}});
 $('c-back').onclick=()=>show(S.prevMode);
 $('c-test').onclick=()=>{resetAudio();unlockAudio();play('climb_start')};
 S.alert=store.get('tr_alert','sound');$('c-alert').value=S.alert;
@@ -396,13 +435,30 @@ function cueCsv(lr){return '﻿cue_id,label,planned_m,fired_s_m,fired_time,lat,l
 
 // ---------- 달리기 엔진 ----------
 const RUN={};
+// 나침반 한 번 읽기: 안드로이드 deviceorientationabsolute(360−alpha), 아이폰 webkitCompassHeading(권한은 시작 버튼 안에서 요청). 폰 위쪽이 보는 방향
+function compassOnce(ms=2500){return new Promise(res=>{let done=false;const h1=e=>{if(e.absolute&&e.alpha!=null)fin((360-e.alpha)%360)},h2=e=>{if(e.webkitCompassHeading!=null&&e.webkitCompassHeading>=0)fin(e.webkitCompassHeading)};
+  const fin=v=>{if(done)return;done=true;window.removeEventListener('deviceorientationabsolute',h1,true);window.removeEventListener('deviceorientation',h2,true);res(v)};
+  window.addEventListener('deviceorientationabsolute',h1,true);window.addEventListener('deviceorientation',h2,true);setTimeout(()=>fin(null),ms)})}
+function runHead(now){const fx=RUN.fixes,L=fx[fx.length-1];if(!L)return null;const p=[L.lon,L.lat];for(let i=fx.length-2;i>=0&&now-fx[i].t<=15000+Math.max(0,now-L.t);i--){const d=hav([fx[i].lon,fx[i].lat],p);if(d>=Math.max(12,(L.acc||10)*1.2))return brg([fx[i].lon,fx[i].lat],p)}return null}
+// 출발: 첫 좋은 위치에서 한 번(출발점까지 방향·거리 또는 코스 첫 방향), 처음 15 m 움직인 뒤 한 번(반대·다른 방향이면)
+function dirStart(lat,lon,now){if(!S.turns||RUN.sim)return;const me=[lon,lat],D=RUN.dir;
+  if(!D.first){D.first=true;const st=RUN.p5[0].p,dist=hav(me,st),b0=brg(RUN.p5[0].p,RUN.p5[Math.min(RUN.p5.length-1,6)].p);
+    if(dist>30){const b=brg(me,st);play({tts:D.comp!=null?`출발점은 ${clockOf(sdiff(D.comp,b))}시 방향, ${r10(dist)}미터예요.`:`출발점은 ${absWord(b)}으로 ${r10(dist)}미터예요.`});D.far=true}
+    else if(D.comp!=null){const d=sdiff(D.comp,b0);play({tts:Math.abs(d)<20?'코스는 12시 방향, 앞으로 직진이에요.':`코스는 ${clockOf(d)}시 방향, ${sideWord(d)}으로 출발해요.`})}
+    D.at=me;return}
+  if(D.far&&!D.arrived){if(hav(me,RUN.p5[0].p)<25){D.arrived=true;const hd=runHead(now)??D.comp,b0=brg(RUN.p5[0].p,RUN.p5[Math.min(RUN.p5.length-1,6)].p);
+      play({tts:hd!=null?`출발점이에요. 코스는 ${clockOf(sdiff(hd,b0))}시 방향이에요.`:`출발점이에요. 코스는 ${absWord(b0)}으로 가요.`})}return}
+  if(D.checked||D.far||RUN.s>150||!D.at||hav(D.at,me)<15)return;const hd=runHead(now);if(hd==null)return;D.checked=true;
+  const want=brg(posAt5(RUN.s),posAt5(RUN.s+25)),d=sdiff(hd,want);
+  if(Math.abs(d)>=150)play({tts:'반대 방향이에요. 뒤로 돌아요.'});else if(Math.abs(d)>=50)play({tts:`코스는 ${clockOf(d)}시 방향이에요.`})}
 function startRun(sim){const c=S.course;if(!c)return;resetAudio();unlockAudio();requestWake();
-  const p5=resampleSimple(c.coords,5);Object.assign(RUN,{on:true,sim,c,p5,idx:0,s:0,fired:new Set(),off:false,farSince:null,nearSince:null,lastOk:null,hist:[],fixes:[],cues:[],start:Date.now(),watch:null,timer:null,v:1000/S.paceSec});
+  try{if(!sim&&S.turns&&typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)DeviceOrientationEvent.requestPermission().catch(()=>{})}catch(e){}
+  const p5=resampleSimple(c.coords,5);Object.assign(RUN,{on:true,sim,c,p5,idx:0,s:0,dir:{},offHint:0,fired:new Set(),off:false,farSince:null,nearSince:null,lastOk:null,hist:[],fixes:[],cues:[],start:Date.now(),watch:null,timer:null,v:1000/S.paceSec});
   show('run');$('r-title').textContent=c.name||'코스';$('r-mode').textContent=sim?`시뮬레이션 ${S.simSpd}배속`:'GPS';
   RUN.trail=[];startMusic();
   if(sim){let s=0;RUN.timer=setInterval(()=>{s+=RUN.v*S.simSpd;const p=posAt5(Math.min(s,c.L));const n=(Math.random()-0.5)*0.00004;onFix(p[1]+n,p[0]+n,6,Date.now(),null);if(s>c.L+30)stopRun()},1000)}
   else{if(!navigator.geolocation){alert('위치를 쓸 수 없습니다');return stopRun()}RUN.watch=navigator.geolocation.watchPosition(p=>onFix(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.timestamp,p.coords.speed),e=>{$('runbig').textContent='위치 오류: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000})}
-  fire({id:'intro'})}
+  fire({id:'intro'});if(!sim&&S.turns)compassOnce().then(h=>{if(RUN.on)RUN.dir.comp=h})}
 function posAt5(s){const i=Math.min(RUN.p5.length-1,Math.max(0,Math.round(s/5)));return RUN.p5[i].p}
 // 화면 켜짐: 아이폰은 클릭 안에서 요청해야 받아 주므로 시작 버튼에서 바로 부른다. 다른 앱에 다녀오면 풀리므로 다시 잡는다
 let WAKE=null;
@@ -412,6 +468,7 @@ document.addEventListener('visibilitychange',()=>{if((RUN.on||FREE.on)&&document
 function nearest(lat,lon,from,to){const p5=RUN.p5,k=Math.cos(rad(lat))*111320;let best=-1,bd=1e9;for(let i=Math.max(0,from);i<=Math.min(p5.length-1,to);i++){const dx=(p5[i].p[0]-lon)*k,dy=(p5[i].p[1]-lat)*110540,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}return {i:best,d:Math.sqrt(bd)}}
 function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fixes.push({lat,lon,acc,t});showMe([lon,lat],acc);
   if(acc>35){status(`GPS 약함 ±${Math.round(acc)} m — 기다리는 중`);return}
+  dirStart(lat,lon,now);
   const c=RUN.c;let cand=RUN.off?nearest(lat,lon,RUN.idx-20,RUN.p5.length-1):nearest(lat,lon,RUN.idx-10,RUN.idx+160);
   // 이탈 판정
   if(cand.d>40){RUN.nearSince=null;RUN.farSince=RUN.farSince||now;if(!RUN.off&&now-RUN.farSince>=(RUN.sim?2000:10000)){RUN.off=true;play('off_route');RUN.cues.push(rec('off_route',lat,lon,acc,t))}}
@@ -420,6 +477,9 @@ function onFix(lat,lon,acc,t,spd){if(!RUN.on)return;const now=Date.now();RUN.fix
     else{const ns=cand.i*5;const jump=ns-RUN.s;const dtOk=(now-(RUN.lastOk||now))/1000;const base=RUN.v*3+2*acc+30;const allow=Math.max(RUN.v*3,6.5*dtOk)+2*acc+30;
       // 같은 길을 오가는 구간에서 반대편으로 튄 점은 시간상 못 갈 거리라 버린다. GPS가 끊겼다 돌아오면 그만큼 넓게 받는다(그때만 지나친 큐를 건너뜀)
       if(jump<=allow){RUN.lastOk=now;if(ns>=RUN.s){if(jump>base)c.cues.forEach(q=>{if(q.at<ns-30&&!RUN.fired.has(q.id))RUN.fired.add(q.id)});RUN.idx=cand.i}}}}
+  // 이탈 중: 20초마다 코스가 어느 쪽인지(내가 달리는 방향 기준 시계 방향, 방향을 모르면 동서남북)
+  if(RUN.off&&S.turns&&now-RUN.offHint>20000&&cand.i>=0){RUN.offHint=now;const tp=RUN.p5[cand.i].p,b=brg([lon,lat],tp),hd=runHead(now);
+    play({tts:hd!=null?`코스는 ${clockOf(sdiff(hd,b))}시 방향, ${r10(cand.d)}미터예요.`:`코스는 ${absWord(b)}으로 ${r10(cand.d)}미터예요.`})}
   const sNew=RUN.idx*5;RUN.hist.push({t:now,s:sNew});RUN.hist=RUN.hist.filter(h=>now-h.t<=12000);RUN.s=sNew;
   if(RUN.hist.length>=3){const a=RUN.hist[0],b=RUN.hist[RUN.hist.length-1];const v=(b.s-a.s)/((b.t-a.t)/1000||1);if(v>0.8&&v<7)RUN.v=v}
   const age=Math.min(3,Math.max(0,(now-t)/1000));const sEff=RUN.s+RUN.v*(age+0.8);
