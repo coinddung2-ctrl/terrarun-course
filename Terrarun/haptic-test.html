@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TerraRun 진동 패턴 시험</title>
 <style>
-:root{--bg:#fbfaf7;--ink:#1f1d1a;--mute:#6f6a62;--line:#e4e0d8;--accent:#d9480f;--accent2:#2b8a3e;--card:#fff;--warn:#c92a2a}
+:root{--bg:#f6faf6;--ink:#17231b;--mute:#56665b;--line:#d6e2d9;--accent:#25804a;--accent2:#46811f;--card:#fff;--warn:#c92a2a}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
 main{max-width:520px;margin:0 auto;padding:18px 16px calc(28px + env(safe-area-inset-bottom))}
@@ -98,7 +98,7 @@ function finish(){const t=T;T=null;clearTimeout(t.tm);setAns(false);$('start').c
   $('big').textContent=`정답 ${ok}/${t.log.length} (${rate}%)`;
   const all=store.get('tr_haptic',[]);all.push({start:t.start,pose:t.pose,spot:t.spot,n:t.log.length,ok,log:t.log,ua:navigator.userAgent.slice(0,80)});store.set('tr_haptic',all);render()}
 function render(){const all=store.get('tr_haptic',[]);if(!all.length){$('res').textContent='아직 없습니다.';return}
-  const rows=all.map(r=>{const rate=Math.round(100*r.ok/r.n);const pass=r.pose==='뛰며'&&r.n>=20?(rate>=80?' <b style="color:#2b8a3e">통과</b>':' <b class="warn">미달</b>'):'';
+  const rows=all.map(r=>{const rate=Math.round(100*r.ok/r.n);const pass=r.pose==='뛰며'&&r.n>=20?(rate>=80?' <b style="color:#46811f">통과</b>':' <b class="warn">미달</b>'):'';
     return `<tr><td>${new Date(r.start).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${r.pose}</td><td>${r.spot}</td><td>${r.ok}/${r.n}</td><td>${rate}%${pass}</td></tr>`}).join('');
   // 헷갈린 패턴(전체 누적)
   const conf={};all.forEach(r=>r.log.forEach(x=>{if(!x.ok){const key=`${P[x.truth].name} → ${x.a<0?'못 느낌':P[x.a].name}`;conf[key]=(conf[key]||0)+1}}));
